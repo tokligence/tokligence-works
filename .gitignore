@@ -1,0 +1,26 @@
+# Node.js
+node_modules/
+dist/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+thumbs.db
+
+# Test coverage
+coverage/
+
+# Lock file
+package-lock.json
+
+# Markdown files (as per user instruction)
+*.md
