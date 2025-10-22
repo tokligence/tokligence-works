@@ -32,3 +32,4 @@ workspace/
 *.md
 !prompts/*.md
 !docs/*.md
+info
