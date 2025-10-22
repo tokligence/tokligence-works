@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 require('dotenv').config();
 
 import { Command } from 'commander';
