@@ -38,15 +38,75 @@ export class OpenAIAdapter implements Agent {
     });
   }
 
+  private getTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return [
+      {
+        type: 'function',
+        function: {
+          name: 'file_system',
+          description: 'Read or write files in the project workspace',
+          parameters: {
+            type: 'object',
+            properties: {
+              action: {
+                type: 'string',
+                enum: ['read', 'write'],
+                description: 'The action to perform: read or write'
+              },
+              path: {
+                type: 'string',
+                description: 'Workspace-relative path to the file (e.g., "workspace/index.html")'
+              },
+              content: {
+                type: 'string',
+                description: 'Content to write to the file (required for write action)'
+              }
+            },
+            required: ['action', 'path']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'terminal',
+          description: 'Execute shell commands in the project workspace',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: {
+                type: 'string',
+                description: 'The shell command to execute'
+              }
+            },
+            required: ['command']
+          }
+        }
+      }
+    ];
+  }
+
   private buildPrompt(context: AgentContext): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const responsibilities = this.responsibilities?.length ? `Responsibilities: ${this.responsibilities.join(', ')}.` : '';
     const metadata = context.agentMetadata ? `\nSession Metadata: ${JSON.stringify(context.agentMetadata)}` : '';
 
-    const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}\n\nProject Specification:\n${context.projectSpec}\n\nTeam Members:\n${JSON.stringify(context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })), null, 2)}\n\nYour goal is to collaborate with the team to achieve the project objectives. Respond concisely and professionally.\nIMPORTANT: Do not narrate other agents' actions or responses. Respond only as yourself. If you want another agent to perform a task or respond, explicitly mention them using their ID (e.g., @chloe-fe).\nDo not prefix or repeat your own name/role in the response; the system will annotate messages for you.
-Do not start your reply by naming another teammate; speak directly about the task.
+    const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}
 
-If you need to use a tool, respond in the format: CALL_TOOL: tool_name({"command": "value"}).
-For file operations include an explicit "action" field (e.g., {"action": "write"}); do not use dot notation like file_system.write. Use workspace-relative paths (e.g., "workspace/index.html").
+Project Specification:
+${context.projectSpec}
+
+Team Members:
+${JSON.stringify(context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })), null, 2)}
+
+Your goal is to collaborate with the team to achieve the project objectives. Respond concisely and professionally.
+
+IMPORTANT:
+- Do not narrate other agents' actions or responses. Respond only as yourself.
+- If you want another agent to perform a task or respond, explicitly mention them using their ID (e.g., @chloe-frontend, @bob-backend).
+- Do not prefix or repeat your own name/role in the response; the system will annotate messages for you.
+- Do not start your reply by naming another teammate; speak directly about the task.
+- Use the provided tools (file_system, terminal) for file operations and commands.
+- Use workspace-relative paths (e.g., "workspace/index.html").
 ${metadata}`;
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -72,12 +132,45 @@ ${metadata}`;
       const chatCompletion = await this.openai.chat.completions.create({
         model: this.model,
         messages: promptMessages,
+        tools: this.getTools(),
+        tool_choice: 'auto',
         temperature: 0.7,
       });
 
-      const responseContent = chatCompletion.choices[0].message.content || '';
-
+      const responseMessage = chatCompletion.choices[0].message;
       const topicId = context.messages[context.messages.length - 1]?.topicId || 'general';
+
+      // Check if there are tool calls
+      if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+        const toolCall = responseMessage.tool_calls[0];
+
+        // Check if this is a function call
+        if (toolCall.type === 'function' && 'function' in toolCall) {
+          const toolName = toolCall.function.name;
+          const toolArgs = JSON.parse(toolCall.function.arguments);
+
+          // Format as CALL_TOOL for Orchestrator to parse
+          const toolCallContent = `CALL_TOOL: ${toolName}(${JSON.stringify(toolArgs)})`;
+
+          const newMessage: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId,
+            author: { id: this.id, name: this.name, role: this.role, type: 'agent' },
+            timestamp: Date.now(),
+            type: 'text',
+            content: toolCallContent,
+            metadata: {
+              tool_call_id: toolCall.id,
+              native_function_call: true
+            }
+          };
+
+          return { message: newMessage };
+        }
+      }
+
+      // Regular text response
+      const responseContent = responseMessage.content || '';
 
       const newMessage: Message = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
