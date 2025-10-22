@@ -7,6 +7,8 @@
  * Supports lifecycle hooks for external integrations (e.g., Jira, Asana).
  */
 
+import { AgentCredentials, AgentCredentialsManager } from '../config/AgentCredentials';
+
 export interface Task {
   id: string;
   description: string;
@@ -24,39 +26,84 @@ export interface Task {
 }
 
 /**
+ * Context provided to task lifecycle hooks
+ * Contains task information and agent credentials
+ */
+export interface TaskHookContext {
+  task: Task;
+  assigneeCredentials?: AgentCredentials;  // Credentials of the agent assigned to the task
+  assignerCredentials?: AgentCredentials;  // Credentials of the agent who created the task
+}
+
+/**
  * Lifecycle hooks for external integrations
  * These hooks are called at key points in task lifecycle
+ * Hooks receive both task info and agent credentials for multi-account support
  */
 export interface TaskHooks {
   /**
    * Called when a new task is created
    * Useful for creating tickets in external systems (Jira, Asana, etc.)
+   * Can use assigneeCredentials to set correct ticket assignee
    */
-  onCreate?: (task: Task) => Promise<{ externalTicketId?: string; externalTicketUrl?: string } | void>;
+  onCreate?: (context: TaskHookContext) => Promise<{ externalTicketId?: string; externalTicketUrl?: string } | void>;
 
   /**
    * Called when a task starts
    * Useful for updating ticket status in external systems
+   * Can use assigneeCredentials to authenticate with correct account
    */
-  onStart?: (task: Task) => Promise<void>;
+  onStart?: (context: TaskHookContext) => Promise<void>;
 
   /**
    * Called when a task completes successfully
    * Useful for updating ticket status and adding completion notes
+   * Can use assigneeCredentials to update ticket with correct permissions
    */
-  onComplete?: (task: Task) => Promise<void>;
+  onComplete?: (context: TaskHookContext) => Promise<void>;
 
   /**
    * Called when a task fails
    * Useful for updating ticket status and logging errors
+   * Can use assigneeCredentials to update ticket with correct permissions
    */
-  onFail?: (task: Task) => Promise<void>;
+  onFail?: (context: TaskHookContext) => Promise<void>;
 }
 
 export class TaskManager {
   private tasks: Map<string, Task> = new Map();
   private agentTasks: Map<string, Set<string>> = new Map(); // agentId -> Set<taskId>
   private hooks: TaskHooks = {};
+  private credentialsManager?: AgentCredentialsManager;
+
+  /**
+   * Set the credentials manager for agent authentication
+   * @param manager - AgentCredentialsManager instance
+   */
+  setCredentialsManager(manager: AgentCredentialsManager): void {
+    this.credentialsManager = manager;
+  }
+
+  /**
+   * Get the credentials manager
+   * @returns The credentials manager or undefined
+   */
+  getCredentialsManager(): AgentCredentialsManager | undefined {
+    return this.credentialsManager;
+  }
+
+  /**
+   * Build hook context with task and credentials
+   * @param task - The task object
+   * @returns TaskHookContext with task and credentials
+   */
+  private buildHookContext(task: Task): TaskHookContext {
+    return {
+      task,
+      assigneeCredentials: this.credentialsManager?.get(task.assignee),
+      assignerCredentials: this.credentialsManager?.get(task.assignedBy),
+    };
+  }
 
   /**
    * Register lifecycle hooks for external integrations
@@ -65,15 +112,18 @@ export class TaskManager {
    * @example
    * ```typescript
    * taskManager.registerHooks({
-   *   onCreate: async (task) => {
+   *   onCreate: async (context) => {
+   *     const { task, assigneeCredentials } = context;
+   *     // Use assigneeCredentials to authenticate and set correct assignee
    *     const ticket = await jiraClient.createIssue({
    *       summary: task.description,
-   *       assignee: task.assignee
+   *       assignee: assigneeCredentials?.jira?.accountId
    *     });
    *     return { externalTicketId: ticket.key, externalTicketUrl: ticket.url };
    *   },
-   *   onComplete: async (task) => {
-   *     await jiraClient.transitionIssue(task.externalTicketId, 'Done');
+   *   onComplete: async (context) => {
+   *     // Use context.assigneeCredentials for authentication
+   *     await jiraClient.transitionIssue(context.task.externalTicketId, 'Done');
    *   }
    * });
    * ```
@@ -112,7 +162,8 @@ export class TaskManager {
     // Call onCreate hook if registered
     if (this.hooks.onCreate) {
       try {
-        const externalData = await this.hooks.onCreate(task);
+        const context = this.buildHookContext(task);
+        const externalData = await this.hooks.onCreate(context);
         if (externalData) {
           task.externalTicketId = externalData.externalTicketId;
           task.externalTicketUrl = externalData.externalTicketUrl;
@@ -150,7 +201,8 @@ export class TaskManager {
     // Call onStart hook if registered
     if (this.hooks.onStart) {
       try {
-        await this.hooks.onStart(task);
+        const context = this.buildHookContext(task);
+        await this.hooks.onStart(context);
       } catch (error) {
         console.error(`[TaskManager] onStart hook failed for task ${task.id}:`, error);
       }
@@ -173,7 +225,8 @@ export class TaskManager {
     // Call onComplete hook if registered
     if (this.hooks.onComplete) {
       try {
-        await this.hooks.onComplete(task);
+        const context = this.buildHookContext(task);
+        await this.hooks.onComplete(context);
       } catch (error) {
         console.error(`[TaskManager] onComplete hook failed for task ${task.id}:`, error);
       }
@@ -196,7 +249,8 @@ export class TaskManager {
     // Call onFail hook if registered
     if (this.hooks.onFail) {
       try {
-        await this.hooks.onFail(task);
+        const context = this.buildHookContext(task);
+        await this.hooks.onFail(context);
       } catch (error) {
         console.error(`[TaskManager] onFail hook failed for task ${task.id}:`, error);
       }

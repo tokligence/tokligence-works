@@ -1,16 +1,20 @@
 /**
- * Example: Jira Integration using TaskManager Hooks
+ * Example: Multi-Account Jira Integration using TaskManager Hooks
  *
- * This file demonstrates how to integrate Jira (or any external ticketing system)
- * with the TaskManager using lifecycle hooks.
+ * This file demonstrates how to integrate Jira with MULTI-ACCOUNT support,
+ * where each agent has their own Jira account, email, and API token.
  *
- * To use this in production:
- * 1. Install the Jira client: npm install jira-client
- * 2. Set environment variables: JIRA_HOST, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY
- * 3. Import and register these hooks with your TaskManager instance
+ * Setup:
+ * 1. Install jira-client: npm install jira-client
+ * 2. Configure agent credentials (see examples below)
+ * 3. Register hooks with TaskManager
+ *
+ * Each agent authenticates with their own credentials and creates tickets
+ * assigned to themselves in Jira.
  */
 
-import { TaskManager, TaskHooks, Task } from '../orchestrator/TaskManager';
+import { TaskManager, TaskHooks, TaskHookContext } from '../orchestrator/TaskManager';
+import { AgentCredentialsManager } from '../config/AgentCredentials';
 
 /**
  * Example Jira client interface
@@ -27,8 +31,11 @@ interface JiraClient {
  * Replace with actual JiraClient from jira-client package
  */
 class MockJiraClient implements JiraClient {
+  constructor(private email?: string, private apiToken?: string) {}
+
   async addNewIssue(issue: any) {
-    console.log('[Jira Mock] Creating issue:', issue);
+    console.log(`[Jira Mock ${this.email}] Creating issue:`, issue.fields.summary);
+    console.log(`  - Assignee: ${issue.fields.assignee?.accountId || 'Unassigned'}`);
     return {
       key: `PROJ-${Math.floor(Math.random() * 1000)}`,
       id: `${Date.now()}`,
@@ -37,32 +44,92 @@ class MockJiraClient implements JiraClient {
   }
 
   async transitionIssue(issueKey: string, transition: any) {
-    console.log(`[Jira Mock] Transitioning ${issueKey} to:`, transition);
+    console.log(`[Jira Mock ${this.email}] Transitioning ${issueKey} to:`, transition.transition?.name);
   }
 
   async addComment(issueKey: string, comment: string) {
-    console.log(`[Jira Mock] Adding comment to ${issueKey}:`, comment);
+    console.log(`[Jira Mock ${this.email}] Adding comment to ${issueKey}:`, comment.substring(0, 50));
   }
 }
 
 /**
- * Create Jira integration hooks
+ * Factory for creating Jira clients with agent-specific credentials
  */
-export function createJiraHooks(jiraClient: JiraClient, projectKey: string): TaskHooks {
+class JiraClientFactory {
+  constructor(
+    private defaultHost: string,
+    private projectKey: string
+  ) {}
+
+  /**
+   * Create a Jira client using agent's credentials
+   * Falls back to default/shared credentials if agent doesn't have their own
+   */
+  createClient(context: TaskHookContext): JiraClient {
+    const { assigneeCredentials } = context;
+
+    // Use agent's Jira credentials if available
+    const jiraCreds = assigneeCredentials?.jira;
+    const email = jiraCreds?.email || assigneeCredentials?.email?.address;
+    const apiToken = jiraCreds?.apiToken || process.env.JIRA_API_TOKEN;
+    const host = jiraCreds?.host || this.defaultHost;
+
+    // In production, use actual JiraClient:
+    // return new JiraClient({
+    //   protocol: 'https',
+    //   host: host,
+    //   username: email,
+    //   password: apiToken,
+    //   apiVersion: '2',
+    //   strictSSL: true
+    // });
+
+    // For demo, use mock client
+    return new MockJiraClient(email, apiToken);
+  }
+
+  /**
+   * Get Jira account ID for assignee from credentials
+   */
+  getAssigneeAccountId(context: TaskHookContext): string | undefined {
+    return context.assigneeCredentials?.jira?.accountId;
+  }
+}
+
+/**
+ * Create multi-account Jira hooks
+ * Each agent uses their own Jira credentials for authentication
+ */
+export function createMultiAccountJiraHooks(
+  jiraHost: string,
+  projectKey: string
+): TaskHooks {
+  const factory = new JiraClientFactory(jiraHost, projectKey);
+
   return {
     /**
-     * When a task is created, create a corresponding Jira issue
+     * Create Jira issue with assignee's credentials
      */
-    onCreate: async (task: Task) => {
+    onCreate: async (context: TaskHookContext) => {
+      const { task } = context;
+
       try {
+        // Use assignee's Jira client
+        const jiraClient = factory.createClient(context);
+        const assigneeAccountId = factory.getAssigneeAccountId(context);
+
+        console.log(`[Jira Integration] Creating issue for ${task.assignee} using their credentials`);
+
         const issue = await jiraClient.addNewIssue({
           fields: {
             project: { key: projectKey },
             summary: task.description,
             description: `Task assigned to: ${task.assignee}\nAssigned by: ${task.assignedBy}`,
             issuetype: { name: 'Task' },
-            // You can map assignee to Jira user:
-            // assignee: { accountId: mapAgentToJiraUser(task.assignee) }
+            // Assign to the agent's Jira account
+            ...(assigneeAccountId && {
+              assignee: { accountId: assigneeAccountId }
+            })
           }
         });
 
@@ -79,34 +146,42 @@ export function createJiraHooks(jiraClient: JiraClient, projectKey: string): Tas
     },
 
     /**
-     * When a task starts, transition Jira issue to "In Progress"
+     * Update issue status using assignee's credentials
      */
-    onStart: async (task: Task) => {
+    onStart: async (context: TaskHookContext) => {
+      const { task } = context;
       if (!task.externalTicketId) return;
 
       try {
+        const jiraClient = factory.createClient(context);
+
+        console.log(`[Jira Integration] ${task.assignee} starting work on ${task.externalTicketId}`);
+
         await jiraClient.transitionIssue(task.externalTicketId, {
           transition: { name: 'In Progress' }
         });
-
-        console.log(`[Jira Integration] Transitioned ${task.externalTicketId} to In Progress`);
       } catch (error) {
         console.error('[Jira Integration] Failed to transition issue:', error);
       }
     },
 
     /**
-     * When a task completes, transition Jira issue to "Done" and add result comment
+     * Complete issue using assignee's credentials
      */
-    onComplete: async (task: Task) => {
+    onComplete: async (context: TaskHookContext) => {
+      const { task } = context;
       if (!task.externalTicketId) return;
 
       try {
+        const jiraClient = factory.createClient(context);
+
+        console.log(`[Jira Integration] ${task.assignee} completing ${task.externalTicketId}`);
+
         // Add completion comment
         if (task.result) {
           await jiraClient.addComment(
             task.externalTicketId,
-            `Task completed by agent.\n\nResult: ${task.result}`
+            `Task completed by ${task.assignee}.\n\nResult: ${task.result}`
           );
         }
 
@@ -114,27 +189,27 @@ export function createJiraHooks(jiraClient: JiraClient, projectKey: string): Tas
         await jiraClient.transitionIssue(task.externalTicketId, {
           transition: { name: 'Done' }
         });
-
-        console.log(`[Jira Integration] Completed ${task.externalTicketId}`);
       } catch (error) {
         console.error('[Jira Integration] Failed to complete issue:', error);
       }
     },
 
     /**
-     * When a task fails, add error comment to Jira issue
+     * Log failure using assignee's credentials
      */
-    onFail: async (task: Task) => {
+    onFail: async (context: TaskHookContext) => {
+      const { task } = context;
       if (!task.externalTicketId) return;
 
       try {
-        // Add failure comment
+        const jiraClient = factory.createClient(context);
+
+        console.log(`[Jira Integration] Logging failure for ${task.externalTicketId}`);
+
         await jiraClient.addComment(
           task.externalTicketId,
-          `Task failed.\n\nError: ${task.error || 'Unknown error'}`
+          `Task failed.\n\nError: ${task.error || 'Unknown error'}\nAgent: ${task.assignee}`
         );
-
-        console.log(`[Jira Integration] Logged failure for ${task.externalTicketId}`);
       } catch (error) {
         console.error('[Jira Integration] Failed to log error:', error);
       }
@@ -143,29 +218,98 @@ export function createJiraHooks(jiraClient: JiraClient, projectKey: string): Tas
 }
 
 /**
- * Example usage in your Orchestrator setup:
+ * Complete example usage with multi-account setup:
+ *
+ * ## Option 1: Load from environment variables
+ *
+ * ```bash
+ * # Set up agent credentials in environment
+ * export AGENT_CHLOE_FRONTEND_EMAIL=chloe@company.com
+ * export AGENT_CHLOE_FRONTEND_JIRA_EMAIL=chloe@company.com
+ * export AGENT_CHLOE_FRONTEND_JIRA_ACCOUNT_ID=557058:abc123
+ * export AGENT_CHLOE_FRONTEND_JIRA_API_TOKEN=chloe_token_here
+ *
+ * export AGENT_BOB_BACKEND_EMAIL=bob@company.com
+ * export AGENT_BOB_BACKEND_JIRA_EMAIL=bob@company.com
+ * export AGENT_BOB_BACKEND_JIRA_ACCOUNT_ID=557058:def456
+ * export AGENT_BOB_BACKEND_JIRA_API_TOKEN=bob_token_here
+ *
+ * export AGENT_ALEX_LEAD_EMAIL=alex@company.com
+ * export AGENT_ALEX_LEAD_JIRA_EMAIL=alex@company.com
+ * export AGENT_ALEX_LEAD_JIRA_ACCOUNT_ID=557058:ghi789
+ * export AGENT_ALEX_LEAD_JIRA_API_TOKEN=alex_token_here
+ * ```
  *
  * ```typescript
- * import { createJiraHooks } from './integrations/jira-example';
- * import JiraClient from 'jira-client';
+ * import { AgentCredentialsManager } from './config/AgentCredentials';
+ * import { createMultiAccountJiraHooks } from './integrations/jira-example';
  *
- * // Initialize Jira client
- * const jira = new JiraClient({
- *   protocol: 'https',
- *   host: process.env.JIRA_HOST,
- *   username: process.env.JIRA_EMAIL,
- *   password: process.env.JIRA_API_TOKEN,
- *   apiVersion: '2',
- *   strictSSL: true
- * });
+ * // Create credentials manager
+ * const credentialsManager = new AgentCredentialsManager();
  *
- * // Create hooks
- * const jiraHooks = createJiraHooks(jira, process.env.JIRA_PROJECT_KEY || 'PROJ');
+ * // Load from environment variables
+ * credentialsManager.loadFromEnvironment([
+ *   'chloe-frontend',
+ *   'bob-backend',
+ *   'alex-lead'
+ * ]);
  *
- * // Register hooks with TaskManager
- * const orchestrator = new Orchestrator(...);
+ * // Create orchestrator and set credentials
+ * const orchestrator = new Orchestrator(teamConfig, projectSpec, workspaceDir);
+ * await orchestrator.initialize();
+ *
+ * orchestrator.getTaskManager().setCredentialsManager(credentialsManager);
+ *
+ * // Register multi-account Jira hooks
+ * const jiraHooks = createMultiAccountJiraHooks(
+ *   process.env.JIRA_HOST || 'your-domain.atlassian.net',
+ *   process.env.JIRA_PROJECT_KEY || 'PROJ'
+ * );
  * orchestrator.getTaskManager().registerHooks(jiraHooks);
  * ```
+ *
+ * ## Option 2: Load from configuration object
+ *
+ * ```typescript
+ * const credentialsManager = new AgentCredentialsManager();
+ *
+ * credentialsManager.loadFromConfig({
+ *   'chloe-frontend': {
+ *     email: { address: 'chloe@company.com' },
+ *     jira: {
+ *       email: 'chloe@company.com',
+ *       accountId: '557058:abc123',
+ *       apiToken: process.env.CHLOE_JIRA_TOKEN
+ *     }
+ *   },
+ *   'bob-backend': {
+ *     email: { address: 'bob@company.com' },
+ *     jira: {
+ *       email: 'bob@company.com',
+ *       accountId: '557058:def456',
+ *       apiToken: process.env.BOB_JIRA_TOKEN
+ *     }
+ *   },
+ *   'alex-lead': {
+ *     email: { address: 'alex@company.com' },
+ *     jira: {
+ *       email: 'alex@company.com',
+ *       accountId: '557058:ghi789',
+ *       apiToken: process.env.ALEX_JIRA_TOKEN
+ *     }
+ *   }
+ * });
+ *
+ * // Then register hooks as shown above
+ * ```
+ *
+ * ## How it works:
+ *
+ * 1. Each agent has their own Jira email, account ID, and API token
+ * 2. When a task is created, it uses the assignee's credentials
+ * 3. The Jira ticket is created with the assignee's account
+ * 4. All updates (start, complete, fail) use the assignee's credentials
+ * 5. This ensures proper authentication and audit trails in Jira
  */
 
 // Export mock client for testing

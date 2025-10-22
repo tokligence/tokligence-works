@@ -5,6 +5,9 @@ dist/
 # Environment variables
 .env
 
+# Agent credentials (contains secrets)
+config/agent-credentials.json
+
 # Logs
 *.log
 
@@ -25,6 +28,7 @@ package-lock.json
 # Runtime workspaces
 workspace/
 
-# Markdown files (as per user instruction) - but keep prompts/
+# Markdown files (as per user instruction) - but keep prompts/ and docs/
 *.md
 !prompts/*.md
+!docs/*.md
