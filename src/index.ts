@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-require('dotenv').config();
-
 import { Command } from 'commander';
+import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
@@ -52,6 +51,16 @@ program.command('run')
   .argument('<specFile>', 'Path to the project specification file (e.g., spec.md)')
   .option('-t, --team <teamFile>', 'Path to the team configuration file (default: team.yml)', 'team.yml')
   .action(async (specFile, options) => {
+    // Load environment variables from .tokligence/.env or .env
+    const tokligenceEnvPath = path.join(process.cwd(), '.tokligence', '.env');
+    const defaultEnvPath = path.join(process.cwd(), '.env');
+
+    if (fs.existsSync(tokligenceEnvPath)) {
+      dotenv.config({ path: tokligenceEnvPath });
+    } else if (fs.existsSync(defaultEnvPath)) {
+      dotenv.config({ path: defaultEnvPath });
+    }
+
     console.log(chalk_default.bold.blue(`\n--- Tokligence Works CLI ---`));
     console.log(chalk_default.blue(`Running project with spec: ${specFile}`));
     console.log(chalk_default.blue(`Using team config: ${options.team}\n`));

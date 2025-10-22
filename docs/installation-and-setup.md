@@ -53,7 +53,7 @@ tokligence --help
 For contributing to the project:
 
 ```bash
-git clone https://github.com/your-org/tokligence-works.git
+git clone https://github.com/tokligence/tokligence-works.git
 cd tokligence-works
 npm install
 npm link  # Creates global symlink to development version
@@ -450,5 +450,5 @@ cd ~/mobile-app && tokligence start
 ## Getting Help
 
 - 📚 [Documentation](.)
-- 💬 [Community Discussions](https://github.com/your-org/tokligence-works/discussions)
-- 🐛 [Report Issues](https://github.com/your-org/tokligence-works/issues)
+- 💬 [Community Discussions](https://github.com/tokligence/tokligence-works/discussions)
+- 🐛 [Report Issues](https://github.com/tokligence/tokligence-works/issues)
