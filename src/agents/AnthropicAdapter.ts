@@ -38,43 +38,135 @@ export class AnthropicAdapter implements Agent {
     });
   }
 
-  private buildPrompt(context: AgentContext): string {
-    const responsibilities = this.responsibilities?.length ? `Responsibilities: ${this.responsibilities.join(', ')}.` : '';
-    const metadata = context.agentMetadata ? `\nSession Metadata: ${JSON.stringify(context.agentMetadata)}` : '';
+  private getTools(): Anthropic.Tool[] {
+    return [
+      {
+        name: 'file_system',
+        description: 'Read or write files in the project workspace. Use workspace-relative paths.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['read', 'write'],
+              description: 'The action to perform: read or write'
+            },
+            path: {
+              type: 'string',
+              description: 'Workspace-relative path to the file (e.g., "workspace/index.html")'
+            },
+            content: {
+              type: 'string',
+              description: 'Content to write to the file (required for write action)'
+            }
+          },
+          required: ['action', 'path']
+        }
+      },
+      {
+        name: 'terminal',
+        description: 'Execute shell commands in the project workspace',
+        input_schema: {
+          type: 'object',
+          properties: {
+            command: {
+              type: 'string',
+              description: 'The shell command to execute'
+            }
+          },
+          required: ['command']
+        }
+      }
+    ];
+  }
 
-    const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}\n\nProject Specification:\n${context.projectSpec}\n\nTeam Members:\n${JSON.stringify(context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })), null, 2)}\n\nYour goal is to collaborate with the team to achieve the project objectives. Respond concisely and professionally.\nIMPORTANT: Do not narrate other agents' actions or responses. Respond only as yourself. If you want another agent to perform a task or respond, explicitly mention them using their ID (e.g., @chloe-fe).\nDo not prefix or repeat your own name/role in the response; the system will annotate messages for you.\n\nIf you need to use a tool, respond in the format: CALL_TOOL: tool_name({"command": "value"}).\nFor file operations include an explicit "action" field (e.g., {"action": "write"}); do not use dot notation like file_system.write. Use workspace-relative paths (e.g., "workspace/index.html").${metadata}`;
+  private buildMessages(context: AgentContext): Anthropic.MessageParam[] {
+    const messages: Anthropic.MessageParam[] = [];
 
-    let conversation = '';
     context.messages.forEach((msg: Message) => {
-      const authorName = msg.author.name;
-      const authorRole = msg.author.role;
       const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
 
       if (msg.author.type === 'human') {
-        conversation += `\nHuman (${authorName} - ${authorRole}): ${content}`;
+        messages.push({
+          role: 'user',
+          content: `${msg.author.name} (${msg.author.role}): ${content}`
+        });
       } else {
-        conversation += `\nAssistant (${authorName} - ${authorRole}): ${content}`;
+        messages.push({
+          role: 'assistant',
+          content: `${msg.author.name} (${msg.author.role}): ${content}`
+        });
       }
     });
 
-    return `${systemPrompt}\n${conversation}\nAssistant (${this.name} - ${this.role}):`;
+    return messages;
   }
 
   async execute(context: AgentContext): Promise<AgentOutput> {
-    const prompt = this.buildPrompt(context);
+    const responsibilities = this.responsibilities?.length ? `Responsibilities: ${this.responsibilities.join(', ')}.` : '';
+    const metadata = context.agentMetadata ? `\nSession Metadata: ${JSON.stringify(context.agentMetadata)}` : '';
+
+    const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}
+
+Project Specification:
+${context.projectSpec}
+
+Team Members:
+${JSON.stringify(context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })), null, 2)}
+
+Your goal is to collaborate with the team to achieve the project objectives. Respond concisely and professionally.
+
+IMPORTANT:
+- Do not narrate other agents' actions or responses. Respond only as yourself.
+- If you want another agent to perform a task or respond, explicitly mention them using their ID (e.g., @chloe-frontend, @bob-backend).
+- Do not prefix or repeat your own name/role in the response; the system will annotate messages for you.
+- Do not start your reply by naming another teammate; speak directly about the task.
+- Use the provided tools (file_system, terminal) for file operations and commands.
+- Use workspace-relative paths (e.g., "workspace/index.html").
+${metadata}`;
+
+    const messages = this.buildMessages(context);
+    const topicId = context.messages[context.messages.length - 1]?.topicId || 'general';
 
     try {
       const response = await this.anthropic.messages.create({
         model: this.model,
-        max_tokens: 1024,
-        messages: [
-          { role: 'user', content: prompt },
-        ],
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: messages,
+        tools: this.getTools(),
       });
 
-      const contentBlock = response.content[0];
-      const responseContent = contentBlock && contentBlock.type === 'text' ? contentBlock.text : JSON.stringify(contentBlock);
-      const topicId = context.messages[context.messages.length - 1]?.topicId || 'general';
+      // Check if Claude wants to use a tool
+      const toolUseBlock = response.content.find(block => block.type === 'tool_use');
+
+      if (toolUseBlock && toolUseBlock.type === 'tool_use') {
+        const toolName = toolUseBlock.name;
+        const toolInput = toolUseBlock.input as Record<string, any>;
+
+        // Format as CALL_TOOL for Orchestrator to parse
+        const toolCallContent = `CALL_TOOL: ${toolName}(${JSON.stringify(toolInput)})`;
+
+        const newMessage: Message = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          topicId,
+          author: { id: this.id, name: this.name, role: this.role, type: 'agent' },
+          timestamp: Date.now(),
+          type: 'text',
+          content: toolCallContent,
+          metadata: {
+            tool_use_id: toolUseBlock.id,
+            native_tool_use: true,
+            claude_powered: true
+          }
+        };
+
+        return { message: newMessage };
+      }
+
+      // Regular text response
+      const textBlock = response.content.find(block => block.type === 'text');
+      const responseContent = textBlock && textBlock.type === 'text' ? textBlock.text : '';
 
       const newMessage: Message = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -88,9 +180,10 @@ export class AnthropicAdapter implements Agent {
       return { message: newMessage };
 
     } catch (error) {
+      console.error(`Error in AnthropicAdapter for ${this.name}:`, error);
       const errorMessage: Message = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        topicId: context.messages[context.messages.length - 1]?.topicId || 'general',
+        topicId,
         author: { id: this.id, name: this.name, role: this.role, type: 'agent' },
         timestamp: Date.now(),
         type: 'system',
