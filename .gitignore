@@ -22,5 +22,8 @@ coverage/
 # Lock file
 package-lock.json
 
+# Runtime workspaces
+workspace/
+
 # Markdown files (as per user instruction)
 *.md
