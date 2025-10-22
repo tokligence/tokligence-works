@@ -1,5 +1,5 @@
 {
-  "name": "tokligence-works",
+  "name": "@tokligence/tokligence-works",
   "version": "0.1.0",
   "description": "AI-powered multi-agent development teams. Orchestrate LLM agents that collaborate like real software teams.",
   "main": "dist/index.js",

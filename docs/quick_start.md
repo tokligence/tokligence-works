@@ -28,9 +28,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AIzaSy...
 ```
 
-## 4. Configure Your Team (`team.yml`)
+## 4. Configure Your Team (`tokligence.yml`)
 
-`team.yml` now captures delivery mode, sandbox level, and detailed role metadata. Adjust it to match your project. Example:
+`tokligence.yml` now captures delivery mode, sandbox level, and detailed role metadata. Adjust it to match your project. Example:
 
 ```yaml
 teamName: "Tokligence Works Team"
@@ -107,7 +107,7 @@ npm start -- run spec.md
 | Issue | Fix |
 |-------|-----|
 | `TSError` / `API_KEY is not set` | Ensure `.env` is populated or remove the missing key entirely (the agent will run in simulation). |
-| `invalid model ID` | Correct the `model` field in `team.yml` (e.g., `gpt-4o`, `claude-3-opus-20240229`, `gemini-1.5-flash`). |
+| `invalid model ID` | Correct the `model` field in `tokligence.yml` (e.g., `gpt-4o`, `claude-3-opus-20240229`, `gemini-1.5-flash`). |
 | Agent repeats the same line | Watch for the system banner “Human guidance required”; provide instructions or type `exit`. |
 | `Cannot find module ...` | Re-run `npm install` to ensure dependencies are installed. |
 

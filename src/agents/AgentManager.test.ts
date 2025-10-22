@@ -32,10 +32,19 @@ jest.mock('./SimulatedAdapter', () => ({
   })),
 }));
 
+jest.mock('./CodexCLIAdapter', () => ({
+  CodexCLIAdapter: jest.fn().mockImplementation((config) => ({
+    ...config,
+    execute: jest.fn(),
+    id: config.id || 'mock-codex-id',
+  })),
+}));
+
 import { OpenAIAdapter } from './OpenAIAdapter';
 import { AnthropicAdapter } from './AnthropicAdapter';
 import { GoogleGeminiAdapter } from './GoogleGeminiAdapter';
 import { SimulatedAdapter } from './SimulatedAdapter';
+import { CodexCLIAdapter } from './CodexCLIAdapter';
 
 describe('AgentManager', () => {
   let agentManager: AgentManager;
@@ -46,6 +55,9 @@ describe('AgentManager', () => {
     process.env.OPENAI_API_KEY = 'test-openai';
     process.env.ANTHROPIC_API_KEY = 'test-anthropic';
     process.env.GOOGLE_API_KEY = 'test-google';
+    delete process.env.CODEX_CLI_PATH;
+    delete process.env.CLAUDE_CLI_PATH;
+    delete process.env.GEMINI_CLI_PATH;
 
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -55,12 +67,16 @@ describe('AgentManager', () => {
     (AnthropicAdapter as jest.Mock).mockClear();
     (GoogleGeminiAdapter as jest.Mock).mockClear();
     (SimulatedAdapter as jest.Mock).mockClear();
+    (CodexCLIAdapter as jest.Mock).mockClear();
   });
 
   afterEach(() => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.GOOGLE_API_KEY;
+    delete process.env.CODEX_CLI_PATH;
+    delete process.env.CLAUDE_CLI_PATH;
+    delete process.env.GEMINI_CLI_PATH;
     warnSpy.mockRestore();
   });
 
@@ -169,5 +185,46 @@ describe('AgentManager', () => {
     const simulated = agentManager.replaceWithSimulated('agent-swap');
     expect(simulated).toBeDefined();
     expect(simulated?.execute).toBeDefined();
+  });
+
+  it('passes binaryPath to CLI adapters', () => {
+    const config = {
+      id: 'codex-cli-agent',
+      name: 'CodexCLI',
+      role: 'Developer',
+      model: 'codex-cli/davinci',
+      skills: [],
+      scope: '',
+      personality: '',
+      binaryPath: '/opt/homebrew/bin/codex',
+    };
+
+    agentManager.createAgent(config as any);
+
+    expect(CodexCLIAdapter).toHaveBeenCalledTimes(1);
+    expect(CodexCLIAdapter).toHaveBeenCalledWith(expect.objectContaining({
+      binaryPath: config.binaryPath,
+    }));
+  });
+
+  it('uses environment overrides for CLI binary paths when explicit value not provided', () => {
+    process.env.CODEX_CLI_PATH = '/opt/homebrew/bin/codex';
+
+    const config = {
+      id: 'codex-cli-env-agent',
+      name: 'CodexCLIEnv',
+      role: 'Developer',
+      model: 'codex-cli/davinci',
+      skills: [],
+      scope: '',
+      personality: '',
+    };
+
+    agentManager.createAgent(config as any);
+
+    expect(CodexCLIAdapter).toHaveBeenCalledTimes(1);
+    expect(CodexCLIAdapter).toHaveBeenCalledWith(expect.objectContaining({
+      binaryPath: '/opt/homebrew/bin/codex',
+    }));
   });
 });

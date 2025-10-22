@@ -95,6 +95,7 @@ export class PromptLoader {
 
     const roleInstructions = this.getRoleInstructions(role);
     const generalRules = this.getGeneralRules();
+    const roleConstraints = this.getRoleConstraints(role);
 
     return `You are ${name}, a ${role}${level ? ` (${level})` : ''}.
 Your skills include: ${skills.join(', ')}.
@@ -117,7 +118,34 @@ ${roleInstructions}
 ## General Rules
 
 ${generalRules}
+${roleConstraints ? `
+## Role-Specific Constraints
+
+${roleConstraints}
+` : ''}
 ${metadata || ''}`;
+  }
+
+  private static getRoleConstraints(role: string): string {
+    const lines: string[] = [];
+    const roleLower = role.toLowerCase();
+
+    if (roleLower.includes('team lead') || roleLower.includes('lead')) {
+      lines.push('- Focus on planning, delegation, and reviews. Do not implement features unless you explicitly take over a blocked task.');
+      lines.push('- Avoid writing or modifying project files directly; instruct the assigned developer to make changes.');
+    }
+
+    if (roleLower.includes('qa')) {
+      lines.push('- You are responsible for verification and feedback only. Never modify project files or run destructive commands.');
+      lines.push('- Use tools such as `file_system.read` or safe terminal commands to inspect results, then report findings to the Team Lead.');
+    }
+
+    if ((roleLower.includes('developer') || roleLower.includes('engineer')) && !roleLower.includes('qa')) {
+      lines.push('- You must carry out the implementation personally. Use the available tools to modify files, run tests, and deliver artifacts.');
+      lines.push('- Do not claim completion unless you executed the required commands yourself.');
+    }
+
+    return lines.join('\n');
   }
 
   /**

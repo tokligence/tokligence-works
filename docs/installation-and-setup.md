@@ -130,6 +130,8 @@ members:
     skills: [react, typescript, css, responsive-design]
 ```
 
+> 💡 For CLI-based agents (e.g., `codex-cli/*`, `claude-code/*`, `gemini-cli/*`), add a `binaryPath` field or set the corresponding environment variable (`CODEX_CLI_PATH`, `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`) so the orchestrator can locate the executable.
+
 ### Step 4: Define Your Project
 
 Edit `SPEC.md`:
@@ -214,7 +216,7 @@ tokligence init
 tokligence start
 
 # Start with custom config
-tokligence start --config custom-team.yml
+tokligence start --team custom-team.yml
 
 # Check configuration
 tokligence config validate
@@ -228,6 +230,18 @@ tokligence --version
 # Get help
 tokligence --help
 ```
+
+### CLI Agent Environment Variables
+
+When using CLI-based agents you can configure executables and logging with environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `CODEX_CLI_PATH` | Override the Codex CLI binary path |
+| `CLAUDE_CLI_PATH` | Override the Claude Code CLI binary path |
+| `GEMINI_CLI_PATH` | Override the Gemini CLI binary path |
+| `TOKLIGENCE_CLI_TIMEOUT_MS` | Set the CLI command timeout (default 45000) |
+| `TOKLIGENCE_CLI_LOG_DIR` | Directory for streaming CLI logs (default `./logs`) |
 
 ## Configuration Hierarchy
 

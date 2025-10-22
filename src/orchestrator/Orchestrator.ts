@@ -195,7 +195,6 @@ export class Orchestrator extends EventEmitter {
         return;
       }
       normalizedMessage.content = sanitized;
-
       const lastMessage = this.lastAgentMessages.get(agent.id);
       if (lastMessage === sanitized) {
         this.handleRepeatedMessage(agent, sanitized, task.topicId);
@@ -210,9 +209,6 @@ export class Orchestrator extends EventEmitter {
     }
 
     this.awaitingHumanInput = false;
-
-    this.recordMessageEvent(normalizedMessage);
-    this.emit('message', normalizedMessage);
 
     const toolCallPattern = /^CALL_TOOL:\s*([a-zA-Z0-9_]+)(?:\.([a-zA-Z0-9_]+))?\((.*)\)\s*;?$/;
     const match = contentString.match(toolCallPattern);
@@ -249,6 +245,76 @@ export class Orchestrator extends EventEmitter {
       if (derivedAction && typeof args === 'object' && !('action' in args)) {
         args.action = derivedAction;
       }
+
+      const action = typeof args === 'object' ? (args.action || derivedAction || '').toLowerCase() : '';
+      const roleLower = (agent.role || '').toLowerCase();
+      const isTeamLead = roleLower.includes('team lead') || roleLower.includes('lead');
+
+      if (toolName === 'file_system' && action === 'write') {
+        if (roleLower.includes('qa')) {
+          const denyMessage: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId: task.topicId,
+            author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+            timestamp: Date.now(),
+            type: 'system',
+            content: `${agent.name}, as QA you are limited to verification-only tasks. Please review the results and coordinate with the assigned developer instead of modifying files.`,
+          };
+          this.recordMessageEvent(denyMessage);
+          this.emit('message', denyMessage);
+          this.scheduler.routeBackToLead(task.topicId, agent.id);
+          return;
+        }
+
+        const hasActiveTask = this.taskManager.hasActiveTask(agent.id);
+        if (isTeamLead) {
+          const leadMessage: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId: task.topicId,
+            author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+            timestamp: Date.now(),
+            type: 'system',
+            content: `${agent.name}, focus on delegation and reviews. Ask the assigned developer to perform this change instead of doing it yourself.`,
+          };
+          this.recordMessageEvent(leadMessage);
+          this.emit('message', leadMessage);
+
+          const pendingAssignees = this.teamConfig.members
+            .filter((member) => member.id !== agent.id && this.taskManager.hasActiveTask(member.id))
+            .map((member) => member.id);
+
+          if (pendingAssignees.length > 0) {
+            this.scheduler.scheduleMentions(task.topicId, pendingAssignees);
+          }
+
+          this.scheduler.enqueue({
+            type: 'agent_turn',
+            agentId: agent.id,
+            topicId: task.topicId,
+            reason: 'followup',
+            timestamp: Date.now() + 500,
+          });
+          return;
+        }
+
+        if (!hasActiveTask) {
+          const noTaskMessage: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId: task.topicId,
+            author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+            timestamp: Date.now(),
+            type: 'system',
+            content: `${agent.name}, you do not have an active assignment that requires writing files right now. Coordinate with the Team Lead before making changes.`,
+          };
+          this.recordMessageEvent(noTaskMessage);
+          this.emit('message', noTaskMessage);
+          this.scheduler.routeBackToLead(task.topicId, agent.id);
+          return;
+        }
+      }
+
+      this.recordMessageEvent(normalizedMessage);
+      this.emit('message', normalizedMessage);
 
       // Check for resource conflicts before executing tool
       if (!this.parallelExecutor.canExecuteTool(agent.id, toolName, args)) {
@@ -314,9 +380,6 @@ export class Orchestrator extends EventEmitter {
         this.recordToolEvent(toolResult, task.topicId);
         this.emit('message', toolOutputMessage);
 
-        // After tool execution, provide guidance based on success and agent role
-        const isTeamLead = (agent.role || '').toLowerCase().includes('team lead') || (agent.role || '').toLowerCase().includes('lead');
-
         if (!toolResult.success) {
           // Tool failed - agent should retry or report error
           const errorGuidance: Message = {
@@ -338,8 +401,8 @@ export class Orchestrator extends EventEmitter {
             timestamp: Date.now() + 2,
           });
         } else {
-          // Tool succeeded - prompt agent to report completion
           if (!isTeamLead) {
+            await this.taskManager.completeTasksForAgent(agent.id, toolResult.output);
             const reportGuidance: Message = {
               id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
               topicId: task.topicId,
@@ -350,15 +413,16 @@ export class Orchestrator extends EventEmitter {
             };
             this.recordMessageEvent(reportGuidance);
             this.emit('message', reportGuidance);
+            this.scheduler.enqueue({
+              type: 'agent_turn',
+              agentId: agent.id,
+              topicId: task.topicId,
+              reason: 'followup',
+              timestamp: Date.now() + 2,
+            });
+          } else {
+            await this.taskManager.completeTasksForAgent(agent.id, toolResult.output);
           }
-
-          this.scheduler.enqueue({
-            type: 'agent_turn',
-            agentId: agent.id,
-            topicId: task.topicId,
-            reason: 'followup',
-            timestamp: Date.now() + 2,
-          });
         }
       } finally {
         // Always release locks even if tool execution throws
@@ -367,6 +431,9 @@ export class Orchestrator extends EventEmitter {
       await this.runLoop();
       return;
     }
+
+    this.recordMessageEvent(normalizedMessage);
+    this.emit('message', normalizedMessage);
 
     if (mentions.length > 0) {
       // Auto-create tasks for @mentions from Team Lead
@@ -677,6 +744,7 @@ export class Orchestrator extends EventEmitter {
       personality: member.personality || '',
       responsibilities: member.responsibilities || [],
       costPerMinute: member.costPerMinute,
+      binaryPath: member.binaryPath,
     }));
 
     return {

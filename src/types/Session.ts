@@ -16,6 +16,7 @@ export interface TeamMemberConfig {
   personality?: string;
   responsibilities?: string[];
   costPerMinute?: number;
+  binaryPath?: string;
 }
 
 export interface TeamConfig {

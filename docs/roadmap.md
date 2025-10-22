@@ -5,7 +5,7 @@ The open-source edition focuses on a highly capable CLI orchestrator that anyone
 ## ✅ Phase 0 – Foundations (completed)
 - Event-driven orchestrator (`SessionManager` + `Scheduler`)
 - Sandboxed ToolService (strict/guided/wild)
-- Role-aware team configuration (`team.yml` with level/responsibilities)
+- Role-aware team configuration (`tokligence.yml` with level/responsibilities)
 - Automatic simulated fallback when API keys are absent
 - Improved CLI experience (role colours, human-input pauses, duplicate detection)
 
@@ -13,7 +13,7 @@ The open-source edition focuses on a highly capable CLI orchestrator that anyone
 - **WebSocket bridge (read-only)**: Stream session events so alternative clients (web UI, Slack bot prototypes) can consume them.
 - **Memory plugin interface**: Pluggable short/long-term memory (initial SQLite + embeddings reference implementation).
 - **Expanded tool catalogue**: File diff tool, JSON writer, simple HTTP fetcher with sandbox policies.
-- **Team templates**: Predefined `team.yml` snippets for common workflows (frontend-focused, backend-focused, full-stack).
+- **Team templates**: Predefined `tokligence.yml` snippets for common workflows (frontend-focused, backend-focused, full-stack).
 - **Workspace snapshots**: Optional `--snapshots` flag to export the workspace state at key milestones.
 
 ## 🔭 Phase 2 – OSS Road to 1.0 (planned)
@@ -28,5 +28,4 @@ These are being discussed in GitHub issues—contributions welcome!
 - Additional provider adapters (local LLMs via Ollama, Bedrock, Vertex)
 - Scriptable “rituals” (e.g., run tests after every file write)
 - Better transcript exports (Markdown/JSON)
-
 

@@ -41,6 +41,21 @@ function getAgentColor(author: { id: string; role: string; type: 'agent' | 'huma
   return roleColors.default;
 }
 
+function buildAgentRoleMap(teamConfig: any): Map<string, string> {
+  const roleMap = new Map<string, string>();
+  const members = teamConfig && Array.isArray((teamConfig as any).members)
+    ? (teamConfig as any).members
+    : [];
+
+  for (const member of members) {
+    if (member && typeof member.id === 'string') {
+      roleMap.set(member.id, member.role || '');
+    }
+  }
+
+  return roleMap;
+}
+
 program
   .name('tokligence-works')
   .description('CLI for orchestrating AI agent teams')
@@ -49,7 +64,8 @@ program
 program.command('run')
   .description('Run a project with an AI agent team')
   .argument('<specFile>', 'Path to the project specification file (e.g., spec.md)')
-  .option('-t, --team <teamFile>', 'Path to the team configuration file (default: team.yml)', 'team.yml')
+  .option('-t, --team <teamFile>', 'Path to the team configuration file (default: tokligence.yml)', 'tokligence.yml')
+  .option('--auto-exit', 'Automatically exit when all tasks are completed', false)
   .action(async (specFile, options) => {
     // Load environment variables from .tokligence/.env or .env (silently)
     const tokligenceEnvPath = path.join(process.cwd(), '.tokligence', '.env');
@@ -73,6 +89,7 @@ program.command('run')
       process.exit(1);
     }
     const teamConfig = yaml.load(fs.readFileSync(teamConfigPath, 'utf8'));
+    const agentRoles = buildAgentRoleMap(teamConfig);
 
     const projectSpecPath = path.resolve(process.cwd(), specFile);
     if (!fs.existsSync(projectSpecPath)) {
@@ -105,12 +122,14 @@ program.command('run')
     });
 
     orchestrator.on('agentThinking', ({ agentId, agentName, topicId }) => {
-      const formattedAgentName = getAgentColor(agentId)(agentName);
+      const colorizer = getAgentColor({ id: agentId, role: agentRoles.get(agentId) || '', type: 'agent' });
+      const formattedAgentName = colorizer(agentName);
       process.stdout.write(chalk_default.dim(`\n[${formattedAgentName} is thinking in topic: ${topicId}...]`));
     });
 
     orchestrator.on('toolCalling', ({ agentId, agentName, toolName, args }) => {
-      const formattedAgentName = getAgentColor(agentId)(agentName);
+      const colorizer = getAgentColor({ id: agentId, role: agentRoles.get(agentId) || '', type: 'agent' });
+      const formattedAgentName = colorizer(agentName);
       process.stdout.write(chalk_default.dim(`\n[${formattedAgentName} is calling tool: ${toolName} with args: ${JSON.stringify(args)}]`));
     });
 
@@ -184,9 +203,17 @@ program.command('run')
               countdownInterval = null;
             }
             process.stdout.write('\r' + ' '.repeat(rl.line.length + rl.prompt.length + 25) + '\r');
-            console.log(chalk_default.dim('\n(No pending tasks. Session idle.)'));
-            autoTriggered = true;
-            return;
+
+            if (options.autoExit) {
+              console.log(chalk_default.green('\n✓ All tasks completed. Exiting...'));
+              clearTimers();
+              rl.close();
+              process.exit(0);
+            } else {
+              console.log(chalk_default.dim('\n(No pending tasks. Session idle. Type "exit" to quit.)'));
+              autoTriggered = true;
+              return;
+            }
           }
           autoTriggered = true;
           awaitingInput = false;
@@ -229,6 +256,7 @@ program.command('run')
 program.command('start')
   .description('Start the project (shortcut for "run SPEC.md")')
   .option('-t, --team <teamFile>', 'Path to the team configuration file (default: tokligence.yml)', 'tokligence.yml')
+  .option('--auto-exit', 'Automatically exit when all tasks are completed', false)
   .action(async (options) => {
     const specFile = 'SPEC.md';
     const specPath = path.join(process.cwd(), specFile);
@@ -261,6 +289,7 @@ program.command('start')
       process.exit(1);
     }
     const teamConfig = yaml.load(fs.readFileSync(teamConfigPath, 'utf8'));
+    const agentRoles = buildAgentRoleMap(teamConfig);
     const projectSpec = fs.readFileSync(specPath, 'utf8');
     const workspaceDir = process.cwd();
     const orchestrator = new Orchestrator(teamConfig, projectSpec, workspaceDir);
@@ -287,12 +316,14 @@ program.command('start')
     });
 
     orchestrator.on('agentThinking', ({ agentId, agentName, topicId }) => {
-      const formattedAgentName = getAgentColor(agentId)(agentName);
+      const colorizer = getAgentColor({ id: agentId, role: agentRoles.get(agentId) || '', type: 'agent' });
+      const formattedAgentName = colorizer(agentName);
       process.stdout.write(chalk_default.dim(`\n[${formattedAgentName} is thinking in topic: ${topicId}...]`));
     });
 
     orchestrator.on('toolCalling', ({ agentId, agentName, toolName, args }) => {
-      const formattedAgentName = getAgentColor(agentId)(agentName);
+      const colorizer = getAgentColor({ id: agentId, role: agentRoles.get(agentId) || '', type: 'agent' });
+      const formattedAgentName = colorizer(agentName);
       process.stdout.write(chalk_default.dim(`\n[${formattedAgentName} is calling tool: ${toolName} with args: ${JSON.stringify(args)}]`));
     });
 
@@ -366,9 +397,17 @@ program.command('start')
               countdownInterval = null;
             }
             process.stdout.write('\r' + ' '.repeat(rl.line.length + rl.prompt.length + 25) + '\r');
-            console.log(chalk_default.dim('\n(No pending tasks. Session idle.)'));
-            autoTriggered = true;
-            return;
+
+            if (options.autoExit) {
+              console.log(chalk_default.green('\n✓ All tasks completed. Exiting...'));
+              clearTimers();
+              rl.close();
+              process.exit(0);
+            } else {
+              console.log(chalk_default.dim('\n(No pending tasks. Session idle. Type "exit" to quit.)'));
+              autoTriggered = true;
+              return;
+            }
           }
           autoTriggered = true;
           awaitingInput = false;

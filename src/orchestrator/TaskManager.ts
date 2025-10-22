@@ -213,6 +213,60 @@ export class TaskManager {
     return true;
   }
 
+  getActiveTasksForAgent(agentId: string): Task[] {
+    const taskIds = this.agentTasks.get(agentId);
+    if (!taskIds) {
+      return [];
+    }
+    const active: Task[] = [];
+    for (const taskId of taskIds) {
+      const task = this.tasks.get(taskId);
+      if (task && task.status !== 'completed' && task.status !== 'failed') {
+        active.push(task);
+      }
+    }
+    return active;
+  }
+
+  hasActiveTask(agentId: string): boolean {
+    return this.getActiveTasksForAgent(agentId).length > 0;
+  }
+
+  async completeTasksForAgent(agentId: string, result?: string): Promise<void> {
+    const taskIds = this.agentTasks.get(agentId);
+    if (!taskIds || taskIds.size === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    for (const taskId of [...taskIds]) {
+      const task = this.tasks.get(taskId);
+      if (!task || task.status === 'completed') {
+        taskIds.delete(taskId);
+        continue;
+      }
+
+      if (!task.startedAt) {
+        task.startedAt = now;
+      }
+      task.status = 'completed';
+      task.completedAt = now;
+      if (result) {
+        task.result = result;
+      }
+
+      if (this.hooks.onComplete) {
+        try {
+          await this.hooks.onComplete(this.buildHookContext(task));
+        } catch (error) {
+          console.error(`[TaskManager] onComplete hook failed for task ${task.id}:`, error);
+        }
+      }
+
+      taskIds.delete(taskId);
+    }
+  }
+
   /**
    * Mark task as completed
    */

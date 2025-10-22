@@ -152,7 +152,7 @@ export class AgentCredentialsManager {
 
   /**
    * Load credentials from configuration object
-   * Useful for loading from team.yml or similar config files
+   * Useful for loading from tokligence.yml or similar config files
    *
    * @param config - Configuration object mapping agent IDs to credentials
    *
