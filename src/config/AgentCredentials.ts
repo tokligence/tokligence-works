@@ -14,8 +14,9 @@
 export interface JiraCredentials {
   accountId?: string;      // Jira account ID for assignee mapping
   email?: string;          // Email associated with Jira account
-  apiToken?: string;       // Personal API token for this agent
+  apiToken?: string;       // Personal API token for this agent (used as 'password' in jira-client)
   host?: string;           // Jira host (if different from global config)
+  defaultProjects?: string[]; // Default Jira project keys this agent works on (e.g., ['FRONTEND', 'MOBILE'])
 }
 
 export interface SlackCredentials {

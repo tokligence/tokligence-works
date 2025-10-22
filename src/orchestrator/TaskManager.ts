@@ -23,6 +23,8 @@ export interface Task {
   dependencies?: string[]; // IDs of tasks that must complete first
   externalTicketId?: string; // External ticket ID (e.g., Jira ticket key like "PROJ-123")
   externalTicketUrl?: string; // URL to external ticket
+  jiraProject?: string;    // Specific Jira project key for this task (overrides defaults)
+  metadata?: Record<string, any>; // Extensible metadata for integrations
 }
 
 /**
