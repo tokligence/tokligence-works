@@ -1,6 +1,6 @@
 {
   "name": "tokligence-works",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "CLI for orchestrating AI agent teams",
   "main": "dist/index.js",
   "bin": {
