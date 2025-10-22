@@ -135,12 +135,16 @@ TEAM MEMBER SPECIFIC RULES:
 - Describe what you accomplished and ask for next steps or review
 - If you encounter issues, immediately report to Team Lead with details
 - You may also @mention other team members for collaboration or review
+- CRITICAL: Only claim work that YOU personally did using tools
+- Do NOT say "I created X" unless you actually called the tool to create X
+- If discussing another team member's work, say "Team member created X" not "I created X"
 
 Example good completion report:
 "I've created the HTML file at workspace/index.html with all required elements. @alex-lead please review, or let me know if you need any changes."
 
 Example bad (do NOT do this):
 [Uses tool, then stays silent without reporting]
+[Saying "I created the file" when another agent actually created it]
 `;
 
     const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}
