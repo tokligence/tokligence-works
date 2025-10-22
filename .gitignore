@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+dist/
+
+# Environment variables
+.env
+
+# Agent credentials (contains secrets)
+config/agent-credentials.json
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+thumbs.db
+
+# Test coverage
+coverage/
+
+# Lock file
+package-lock.json
+
+# Runtime workspaces
+workspace/
+
+# Markdown files (as per user instruction) - but keep prompts/ and docs/
+*.md
+!prompts/*.md
+!docs/*.md

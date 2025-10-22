@@ -1,0 +1,49 @@
+# Project Specification
+
+## Project Name
+[Your project name here]
+
+## Objective
+[What are you building? 1-2 sentences describing the main goal]
+
+## Requirements
+
+### Functional Requirements
+- [ ] Requirement 1
+- [ ] Requirement 2
+- [ ] Requirement 3
+
+### Non-Functional Requirements
+- Performance: [e.g., page load < 2s]
+- Scalability: [e.g., support 1000 concurrent users]
+- Security: [e.g., HTTPS, authentication required]
+
+## Technical Stack
+- Frontend: [e.g., React, Vue, Angular]
+- Backend: [e.g., Node.js, Python, Go]
+- Database: [e.g., PostgreSQL, MongoDB]
+- Other: [e.g., Redis, Elasticsearch]
+
+## Jira Integration
+Jira Project: YOUR_PROJECT_KEY
+
+<!-- Optional: Multiple projects -->
+<!-- Jira Projects: PROJECT1, PROJECT2, PROJECT3 -->
+
+## Constraints
+- Must use TypeScript
+- Follow existing coding standards
+- Mobile-responsive design required
+- Test coverage > 80%
+
+## Success Criteria
+- [ ] All functional requirements met
+- [ ] All tests passing
+- [ ] Code review approved
+- [ ] Deployed to staging
+
+## Timeline
+Target completion: [Date or duration]
+
+## Notes
+[Any additional context, links to designs, API docs, etc.]

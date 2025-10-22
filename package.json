@@ -1,0 +1,65 @@
+{
+  "name": "tokligence-works",
+  "version": "0.1.0",
+  "description": "AI-powered multi-agent development teams. Orchestrate LLM agents that collaborate like real software teams.",
+  "main": "dist/index.js",
+  "bin": {
+    "tokligence": "dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "prompts/",
+    "templates/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tokligence/tokligence-works.git"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "multi-agent",
+    "orchestration",
+    "gpt-4",
+    "claude",
+    "gemini",
+    "automation",
+    "development-tools",
+    "jira",
+    "collaboration"
+  ],
+  "author": "Tokligence Team",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/tokligence/tokligence-works/issues"
+  },
+  "homepage": "https://github.com/tokligence/tokligence-works#readme",
+  "devDependencies": {
+    "@types/chalk": "^0.4.31",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.9.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.67.0",
+    "@google/generative-ai": "^0.24.1",
+    "@types/js-yaml": "^4.0.9",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.1",
+    "dotenv": "^17.2.3",
+    "js-yaml": "^4.1.0",
+    "openai": "^6.6.0"
+  }
+}
