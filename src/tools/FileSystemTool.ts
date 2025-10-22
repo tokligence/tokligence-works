@@ -1,6 +1,8 @@
-import { Tool, ToolResult } from './Tool';
+import { Tool, ToolContext, ToolResult } from './Tool';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+
+const restrictedPatterns = [/\b\.\./];
 
 export class FileSystemTool implements Tool {
   name: string = 'file_system';
@@ -11,27 +13,45 @@ export class FileSystemTool implements Tool {
     this.workspaceDir = workspaceDir;
   }
 
-  async execute(args: { action: 'read' | 'write'; path: string; content?: string }): Promise<ToolResult> {
-    const fullPath = path.resolve(this.workspaceDir, args.path);
+  async execute(args: { action: 'read' | 'write'; path: string; content?: string }, context: ToolContext): Promise<ToolResult> {
+    const start = Date.now();
+    const relativePath = args.path;
+    if (!relativePath) {
+      return { toolName: this.name, success: false, output: '', error: 'Path is required.' };
+    }
 
-    // Basic security check: ensure path is within workspace
+    if (restrictedPatterns.some((pattern) => pattern.test(relativePath))) {
+      return { toolName: this.name, success: false, output: '', error: `Path ${relativePath} contains restricted segments.` };
+    }
+
+    const fullPath = path.resolve(this.workspaceDir, relativePath);
+
     if (!fullPath.startsWith(this.workspaceDir)) {
-      return { toolName: this.name, success: false, output: '', error: `Access denied: Path ${args.path} is outside the workspace.` };
+      return { toolName: this.name, success: false, output: '', error: `Access denied: Path ${relativePath} is outside the workspace.` };
     }
 
     try {
       if (args.action === 'read') {
         const content = await fs.readFile(fullPath, 'utf8');
-        return { toolName: this.name, success: true, output: content };
-      } else if (args.action === 'write') {
+        return { toolName: this.name, success: true, output: content, durationMs: Date.now() - start };
+      }
+
+      if (args.action === 'write') {
         if (args.content === undefined) {
           return { toolName: this.name, success: false, output: '', error: 'Content is required for write action.' };
         }
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, args.content, 'utf8');
-        return { toolName: this.name, success: true, output: `File ${args.path} written successfully.` };
-      } else {
-        return { toolName: this.name, success: false, output: '', error: `Unsupported action: ${args.action}` };
+        const sandboxNote = context.sandboxLevel === 'wild' ? '' : ' (sandbox)';
+        return {
+          toolName: this.name,
+          success: true,
+          output: `File ${relativePath} written successfully${sandboxNote}.`,
+          durationMs: Date.now() - start,
+        };
       }
+
+      return { toolName: this.name, success: false, output: '', error: `Unsupported action: ${args.action}` };
     } catch (error: any) {
       return { toolName: this.name, success: false, output: '', error: error.message };
     }
