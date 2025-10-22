@@ -1,6 +1,7 @@
 import { Agent, AgentOutput, AgentContext } from './Agent';
 import { Message } from '../types/Message';
 import { Anthropic } from '@anthropic-ai/sdk';
+import { PromptLoader } from '../prompts/PromptLoader';
 
 export class AnthropicAdapter implements Agent {
   id: string;
@@ -103,69 +104,21 @@ export class AnthropicAdapter implements Agent {
   }
 
   async execute(context: AgentContext): Promise<AgentOutput> {
-    const responsibilities = this.responsibilities?.length ? `Responsibilities: ${this.responsibilities.join(', ')}.` : '';
     const metadata = context.agentMetadata ? `\nSession Metadata: ${JSON.stringify(context.agentMetadata)}` : '';
 
-    // Check if this agent is a Team Lead
-    const isTeamLead = this.role.toLowerCase().includes('team lead') || this.role.toLowerCase().includes('lead');
-
-    // Role-specific instructions
-    const roleSpecificInstructions = isTeamLead
-      ? `
-TEAM LEAD SPECIFIC RULES:
-- Your PRIMARY role is coordination and delegation, NOT hands-on implementation
-- You should RARELY use tools directly - delegate to team members instead
-- When you receive a task, break it down and assign subtasks to appropriate team members
-- Always @mention specific team members when delegating (e.g., @chloe-frontend, @bob-backend)
-- After delegating, wait for team members to report back before proceeding
-- When team members report completion, acknowledge and either approve or request changes
-- Only use tools yourself in exceptional cases (e.g., emergency fixes, no suitable team member)
-- Foster discussion by asking team members to review each other's work
-
-Example good delegation:
-"I'll break this into tasks: 1) HTML structure 2) Backend validation. @chloe-frontend please handle the HTML structure and save it in workspace/. @bob-backend once Chloe is done, please add form validation."
-
-Example bad (do NOT do this):
-"I'll create the HTML file myself." [then uses file_system tool]
-`
-      : `
-TEAM MEMBER SPECIFIC RULES:
-- When you complete a task, ALWAYS report back to the Team Lead
-- After using a tool successfully, mention the Team Lead (find their ID in team members list)
-- Describe what you accomplished and ask for next steps or review
-- If you encounter issues, immediately report to Team Lead with details
-- You may also @mention other team members for collaboration or review
-- CRITICAL: Only claim work that YOU personally did using tools
-- Do NOT say "I created X" unless you actually called the tool to create X
-- If discussing another team member's work, say "Team member created X" not "I created X"
-
-Example good completion report:
-"I've created the HTML file at workspace/index.html with all required elements. @alex-lead please review, or let me know if you need any changes."
-
-Example bad (do NOT do this):
-[Uses tool, then stays silent without reporting]
-[Saying "I created the file" when another agent actually created it]
-`;
-
-    const systemPrompt = `You are ${this.name}, a ${this.role}${this.level ? ` (${this.level})` : ''}. Your skills include: ${this.skills.join(', ')}. Your scope of work is: ${this.scope}. Your personality is: ${this.personality}. ${responsibilities}
-
-Project Specification:
-${context.projectSpec}
-
-Team Members:
-${JSON.stringify(context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })), null, 2)}
-
-Your goal is to collaborate with the team to achieve the project objectives. Respond concisely and professionally.
-${roleSpecificInstructions}
-
-GENERAL RULES:
-- Do not narrate other agents' actions or responses. Respond only as yourself.
-- If you want another agent to perform a task or respond, explicitly mention them using their ID (e.g., @chloe-frontend, @bob-backend).
-- Do not prefix or repeat your own name/role in the response; the system will annotate messages for you.
-- Do not start your reply by naming another teammate; speak directly about the task.
-- Use the provided tools (file_system, terminal) for file operations and commands when appropriate for your role.
-- Use workspace-relative paths (e.g., "workspace/index.html").
-${metadata}`;
+    // Build system prompt using PromptLoader
+    const systemPrompt = PromptLoader.buildSystemPrompt({
+      name: this.name,
+      role: this.role,
+      level: this.level,
+      skills: this.skills,
+      scope: this.scope,
+      personality: this.personality,
+      responsibilities: this.responsibilities,
+      projectSpec: context.projectSpec,
+      teamMembers: context.team.members.map((m: any) => ({ name: m.name, role: m.role, level: m.level, id: m.id })),
+      metadata,
+    });
 
     const messages = this.buildMessages(context);
     const topicId = context.messages[context.messages.length - 1]?.topicId || 'general';

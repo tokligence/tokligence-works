@@ -3,6 +3,8 @@
  *
  * Provides explicit task tracking to prevent agents from claiming
  * work done by others and to enable parallel task execution.
+ *
+ * Supports lifecycle hooks for external integrations (e.g., Jira, Asana).
  */
 
 export interface Task {
@@ -17,21 +19,78 @@ export interface Task {
   result?: string;         // Description of what was accomplished
   error?: string;          // Error message if failed
   dependencies?: string[]; // IDs of tasks that must complete first
+  externalTicketId?: string; // External ticket ID (e.g., Jira ticket key like "PROJ-123")
+  externalTicketUrl?: string; // URL to external ticket
+}
+
+/**
+ * Lifecycle hooks for external integrations
+ * These hooks are called at key points in task lifecycle
+ */
+export interface TaskHooks {
+  /**
+   * Called when a new task is created
+   * Useful for creating tickets in external systems (Jira, Asana, etc.)
+   */
+  onCreate?: (task: Task) => Promise<{ externalTicketId?: string; externalTicketUrl?: string } | void>;
+
+  /**
+   * Called when a task starts
+   * Useful for updating ticket status in external systems
+   */
+  onStart?: (task: Task) => Promise<void>;
+
+  /**
+   * Called when a task completes successfully
+   * Useful for updating ticket status and adding completion notes
+   */
+  onComplete?: (task: Task) => Promise<void>;
+
+  /**
+   * Called when a task fails
+   * Useful for updating ticket status and logging errors
+   */
+  onFail?: (task: Task) => Promise<void>;
 }
 
 export class TaskManager {
   private tasks: Map<string, Task> = new Map();
   private agentTasks: Map<string, Set<string>> = new Map(); // agentId -> Set<taskId>
+  private hooks: TaskHooks = {};
+
+  /**
+   * Register lifecycle hooks for external integrations
+   * @param hooks - Object containing lifecycle hook callbacks
+   *
+   * @example
+   * ```typescript
+   * taskManager.registerHooks({
+   *   onCreate: async (task) => {
+   *     const ticket = await jiraClient.createIssue({
+   *       summary: task.description,
+   *       assignee: task.assignee
+   *     });
+   *     return { externalTicketId: ticket.key, externalTicketUrl: ticket.url };
+   *   },
+   *   onComplete: async (task) => {
+   *     await jiraClient.transitionIssue(task.externalTicketId, 'Done');
+   *   }
+   * });
+   * ```
+   */
+  registerHooks(hooks: TaskHooks): void {
+    this.hooks = { ...this.hooks, ...hooks };
+  }
 
   /**
    * Create a new task assignment
    */
-  createTask(params: {
+  async createTask(params: {
     description: string;
     assignee: string;
     assignedBy: string;
     dependencies?: string[];
-  }): Task {
+  }): Promise<Task> {
     const task: Task = {
       id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       description: params.description,
@@ -50,13 +109,26 @@ export class TaskManager {
     }
     this.agentTasks.get(params.assignee)!.add(task.id);
 
+    // Call onCreate hook if registered
+    if (this.hooks.onCreate) {
+      try {
+        const externalData = await this.hooks.onCreate(task);
+        if (externalData) {
+          task.externalTicketId = externalData.externalTicketId;
+          task.externalTicketUrl = externalData.externalTicketUrl;
+        }
+      } catch (error) {
+        console.error(`[TaskManager] onCreate hook failed for task ${task.id}:`, error);
+      }
+    }
+
     return task;
   }
 
   /**
    * Start working on a task
    */
-  startTask(taskId: string): boolean {
+  async startTask(taskId: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) return false;
 
@@ -74,32 +146,62 @@ export class TaskManager {
 
     task.status = 'in_progress';
     task.startedAt = Date.now();
+
+    // Call onStart hook if registered
+    if (this.hooks.onStart) {
+      try {
+        await this.hooks.onStart(task);
+      } catch (error) {
+        console.error(`[TaskManager] onStart hook failed for task ${task.id}:`, error);
+      }
+    }
+
     return true;
   }
 
   /**
    * Mark task as completed
    */
-  completeTask(taskId: string, result: string): boolean {
+  async completeTask(taskId: string, result: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'in_progress') return false;
 
     task.status = 'completed';
     task.completedAt = Date.now();
     task.result = result;
+
+    // Call onComplete hook if registered
+    if (this.hooks.onComplete) {
+      try {
+        await this.hooks.onComplete(task);
+      } catch (error) {
+        console.error(`[TaskManager] onComplete hook failed for task ${task.id}:`, error);
+      }
+    }
+
     return true;
   }
 
   /**
    * Mark task as failed
    */
-  failTask(taskId: string, error: string): boolean {
+  async failTask(taskId: string, error: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) return false;
 
     task.status = 'failed';
     task.completedAt = Date.now();
     task.error = error;
+
+    // Call onFail hook if registered
+    if (this.hooks.onFail) {
+      try {
+        await this.hooks.onFail(task);
+      } catch (error) {
+        console.error(`[TaskManager] onFail hook failed for task ${task.id}:`, error);
+      }
+    }
+
     return true;
   }
 
