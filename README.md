@@ -377,16 +377,16 @@ I've created the basic structure. @alex-lead please review.
 
 ### Get Involved
 
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/your-org/tokligence-works/discussions)
-- 🐛 **Issues**: [Report bugs or request features](https://github.com/your-org/tokligence-works/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/tokligence/tokligence-works/discussions)
+- 🐛 **Issues**: [Report bugs or request features](https://github.com/tokligence/tokligence-works/issues)
 - 🔧 **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md) (coming soon)
 - 📢 **Twitter**: [@tokligence](https://twitter.com/tokligence) (example)
 
 ### Show Your Support
 
 Found a bug? Have a feature request? We'd love to hear from you:
-- 🐛 [Report issues](https://github.com/your-org/tokligence-works/issues)
-- 💡 [Suggest features](https://github.com/your-org/tokligence-works/discussions)
+- 🐛 [Report issues](https://github.com/tokligence/tokligence-works/issues)
+- 💡 [Suggest features](https://github.com/tokligence/tokligence-works/discussions)
 - 📝 Share your use case
 - 🤝 Contribute code or documentation
 
@@ -440,6 +440,6 @@ Built with inspiration from:
 
 **Made with ❤️ by the Tokligence Team**
 
-[Website](https://tokligence.com) • [Documentation](docs/) • [Community](https://github.com/your-org/tokligence-works/discussions)
+[Website](https://tokligence.com) • [Documentation](docs/) • [Community](https://github.com/tokligence/tokligence-works/discussions)
 
 </div>
