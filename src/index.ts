@@ -51,13 +51,15 @@ program.command('run')
   .argument('<specFile>', 'Path to the project specification file (e.g., spec.md)')
   .option('-t, --team <teamFile>', 'Path to the team configuration file (default: team.yml)', 'team.yml')
   .action(async (specFile, options) => {
-    // Load environment variables from .tokligence/.env or .env
+    // Load environment variables from .tokligence/.env or .env (silently)
     const tokligenceEnvPath = path.join(process.cwd(), '.tokligence', '.env');
     const defaultEnvPath = path.join(process.cwd(), '.env');
 
     if (fs.existsSync(tokligenceEnvPath)) {
+      process.env.DOTENV_CONFIG_SILENT = 'true';
       dotenv.config({ path: tokligenceEnvPath });
     } else if (fs.existsSync(defaultEnvPath)) {
+      process.env.DOTENV_CONFIG_SILENT = 'true';
       dotenv.config({ path: defaultEnvPath });
     }
 
@@ -237,13 +239,15 @@ program.command('start')
       process.exit(1);
     }
 
-    // Load environment variables from .tokligence/.env or .env
+    // Load environment variables from .tokligence/.env or .env (silently)
     const tokligenceEnvPath = path.join(process.cwd(), '.tokligence', '.env');
     const defaultEnvPath = path.join(process.cwd(), '.env');
 
     if (fs.existsSync(tokligenceEnvPath)) {
+      process.env.DOTENV_CONFIG_SILENT = 'true';
       dotenv.config({ path: tokligenceEnvPath });
     } else if (fs.existsSync(defaultEnvPath)) {
+      process.env.DOTENV_CONFIG_SILENT = 'true';
       dotenv.config({ path: defaultEnvPath });
     }
 
