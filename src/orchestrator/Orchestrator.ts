@@ -4,6 +4,8 @@ import { AgentManager } from '../agents/AgentManager';
 import { SessionManager } from '../session/SessionManager';
 import { Scheduler } from '../scheduler/Scheduler';
 import { ToolService } from '../tools/ToolManager';
+import { TaskManager } from './TaskManager';
+import { ParallelExecutor } from './ParallelExecutor';
 import { Message, ToolOutputContent } from '../types/Message';
 import { ToolResult } from '../tools/Tool';
 import {
@@ -22,6 +24,8 @@ const DEFAULT_SANDBOX: SandboxLevel = 'guided';
 export class Orchestrator extends EventEmitter {
   private agentManager = new AgentManager();
   private toolService: ToolService;
+  private taskManager: TaskManager;
+  private parallelExecutor: ParallelExecutor;
   private agents: Agent[] = [];
   private sessionManager!: SessionManager;
   private scheduler!: Scheduler;
@@ -37,6 +41,8 @@ export class Orchestrator extends EventEmitter {
     this.teamConfig = this.normalizeTeamConfig(teamConfig);
     this.projectSpec = projectSpec;
     this.toolService = new ToolService(workspaceDir);
+    this.taskManager = new TaskManager();
+    this.parallelExecutor = new ParallelExecutor(3); // Allow up to 3 agents in parallel
   }
 
   async initialize(): Promise<void> {
@@ -130,25 +136,44 @@ export class Orchestrator extends EventEmitter {
       if (!agent) {
         return;
       }
-      this.emit('agentThinking', { agentId: agent.id, agentName: agent.name, topicId: task.topicId });
-      const context = this.buildAgentContext(agent, task.topicId);
-      let agentOutput: AgentOutput;
-      try {
-        agentOutput = await agent.execute(context);
-      } catch (error) {
-        const errorMessage: Message = {
-          id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-          topicId: task.topicId,
-          author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
-          timestamp: Date.now(),
-          type: 'system',
-          content: `Error executing agent ${agent.name}: ${error instanceof Error ? error.message : String(error)}`,
-        };
-        this.recordMessageEvent(errorMessage);
-        this.emit('message', errorMessage);
+
+      // Check if agent can start (parallel execution control)
+      if (!this.parallelExecutor.canAgentStart(agent.id)) {
+        // Agent is busy or system at capacity, reschedule
+        this.scheduler.enqueue({
+          ...task,
+          timestamp: Date.now() + 500, // Retry in 500ms
+        });
         return;
       }
-      await this.processAgentOutput(agent, agentOutput.message, task);
+
+      // Mark agent as active
+      this.parallelExecutor.markAgentActive(agent.id);
+
+      try {
+        this.emit('agentThinking', { agentId: agent.id, agentName: agent.name, topicId: task.topicId });
+        const context = this.buildAgentContext(agent, task.topicId);
+        let agentOutput: AgentOutput;
+        try {
+          agentOutput = await agent.execute(context);
+        } catch (error) {
+          const errorMessage: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId: task.topicId,
+            author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+            timestamp: Date.now(),
+            type: 'system',
+            content: `Error executing agent ${agent.name}: ${error instanceof Error ? error.message : String(error)}`,
+          };
+          this.recordMessageEvent(errorMessage);
+          this.emit('message', errorMessage);
+          return;
+        }
+        await this.processAgentOutput(agent, agentOutput.message, task);
+      } finally {
+        // Always mark agent as idle when done
+        this.parallelExecutor.markAgentIdle(agent.id);
+      }
     }
   }
 
@@ -225,79 +250,157 @@ export class Orchestrator extends EventEmitter {
         args.action = derivedAction;
       }
 
-      this.emit('toolCalling', { agentId: agent.id, agentName: agent.name, toolName, args });
-      const toolResult = await this.toolService.executeTool(toolName, args, { sandboxLevel: this.getSandboxLevel() });
-
-      const toolOutput: ToolOutputContent = {
-        toolName: toolResult.toolName,
-        success: toolResult.success,
-        output: toolResult.output,
-        error: toolResult.error,
-        durationMs: toolResult.durationMs,
-      };
-
-      const toolOutputMessage: Message = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        topicId: task.topicId,
-        author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
-        timestamp: Date.now(),
-        type: 'tool_output',
-        content: toolOutput,
-      };
-      this.recordToolEvent(toolResult, task.topicId);
-      this.emit('message', toolOutputMessage);
-
-      // After tool execution, provide guidance based on success and agent role
-      const isTeamLead = (agent.role || '').toLowerCase().includes('team lead') || (agent.role || '').toLowerCase().includes('lead');
-
-      if (!toolResult.success) {
-        // Tool failed - agent should retry or report error
-        const errorGuidance: Message = {
+      // Check for resource conflicts before executing tool
+      if (!this.parallelExecutor.canExecuteTool(agent.id, toolName, args)) {
+        const conflictMessage: Message = {
           id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           topicId: task.topicId,
           author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
-          timestamp: Date.now() + 1,
+          timestamp: Date.now(),
           type: 'system',
-          content: `${agent.name}, the tool execution failed. Please review the error and either retry with corrections or report the issue to the Team Lead.`,
+          content: `${agent.name}, the resource you're trying to access is currently locked by another agent. Please wait or work on a different task.`,
         };
-        this.recordMessageEvent(errorGuidance);
-        this.emit('message', errorGuidance);
+        this.recordMessageEvent(conflictMessage);
+        this.emit('message', conflictMessage);
 
+        // Reschedule for later
         this.scheduler.enqueue({
           type: 'agent_turn',
           agentId: agent.id,
           topicId: task.topicId,
           reason: 'followup',
-          timestamp: Date.now() + 2,
+          timestamp: Date.now() + 1000, // Retry in 1 second
         });
-      } else {
-        // Tool succeeded - prompt agent to report completion
-        if (!isTeamLead) {
-          const reportGuidance: Message = {
+        return;
+      }
+
+      // Acquire locks
+      if (!this.parallelExecutor.acquireToolLocks(agent.id, toolName, args)) {
+        // Lock acquisition failed (shouldn't happen after canExecuteTool check, but defensive)
+        this.scheduler.enqueue({
+          type: 'agent_turn',
+          agentId: agent.id,
+          topicId: task.topicId,
+          reason: 'followup',
+          timestamp: Date.now() + 1000,
+        });
+        return;
+      }
+
+      this.emit('toolCalling', { agentId: agent.id, agentName: agent.name, toolName, args });
+
+      try {
+        const toolResult = await this.toolService.executeTool(toolName, args, { sandboxLevel: this.getSandboxLevel() });
+
+        // Release locks after tool execution
+        this.parallelExecutor.releaseToolLocks(agent.id, toolName, args);
+
+        const toolOutput: ToolOutputContent = {
+          toolName: toolResult.toolName,
+          success: toolResult.success,
+          output: toolResult.output,
+          error: toolResult.error,
+          durationMs: toolResult.durationMs,
+        };
+
+        const toolOutputMessage: Message = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          topicId: task.topicId,
+          author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+          timestamp: Date.now(),
+          type: 'tool_output',
+          content: toolOutput,
+        };
+        this.recordToolEvent(toolResult, task.topicId);
+        this.emit('message', toolOutputMessage);
+
+        // After tool execution, provide guidance based on success and agent role
+        const isTeamLead = (agent.role || '').toLowerCase().includes('team lead') || (agent.role || '').toLowerCase().includes('lead');
+
+        if (!toolResult.success) {
+          // Tool failed - agent should retry or report error
+          const errorGuidance: Message = {
             id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             topicId: task.topicId,
             author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
             timestamp: Date.now() + 1,
             type: 'system',
-            content: `${agent.name}, the tool executed successfully. Please report your completion to the Team Lead using @mention and describe what you accomplished.`,
+            content: `${agent.name}, the tool execution failed. Please review the error and either retry with corrections or report the issue to the Team Lead.`,
           };
-          this.recordMessageEvent(reportGuidance);
-          this.emit('message', reportGuidance);
-        }
+          this.recordMessageEvent(errorGuidance);
+          this.emit('message', errorGuidance);
 
-        this.scheduler.enqueue({
-          type: 'agent_turn',
-          agentId: agent.id,
-          topicId: task.topicId,
-          reason: 'followup',
-          timestamp: Date.now() + 2,
-        });
+          this.scheduler.enqueue({
+            type: 'agent_turn',
+            agentId: agent.id,
+            topicId: task.topicId,
+            reason: 'followup',
+            timestamp: Date.now() + 2,
+          });
+        } else {
+          // Tool succeeded - prompt agent to report completion
+          if (!isTeamLead) {
+            const reportGuidance: Message = {
+              id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+              topicId: task.topicId,
+              author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+              timestamp: Date.now() + 1,
+              type: 'system',
+              content: `${agent.name}, the tool executed successfully. Please report your completion to the Team Lead using @mention and describe what you accomplished.`,
+            };
+            this.recordMessageEvent(reportGuidance);
+            this.emit('message', reportGuidance);
+          }
+
+          this.scheduler.enqueue({
+            type: 'agent_turn',
+            agentId: agent.id,
+            topicId: task.topicId,
+            reason: 'followup',
+            timestamp: Date.now() + 2,
+          });
+        }
+      } finally {
+        // Always release locks even if tool execution throws
+        this.parallelExecutor.releaseToolLocks(agent.id, toolName, args);
       }
       await this.runLoop();
       return;
     }
 
     if (mentions.length > 0) {
+      // Auto-create tasks for @mentions from Team Lead
+      const isTeamLead = (agent.role || '').toLowerCase().includes('team lead') || (agent.role || '').toLowerCase().includes('lead');
+
+      if (isTeamLead && contentString) {
+        // Extract task description for each mentioned agent
+        mentions.forEach(mentionedAgentId => {
+          // Try to extract task from message
+          const taskExtract = this.taskManager.extractTaskFromMessage(contentString, agent.id);
+
+          if (taskExtract && taskExtract.assignee === mentionedAgentId) {
+            // Create task assignment
+            const newTask = this.taskManager.createTask({
+              description: taskExtract.description,
+              assignee: mentionedAgentId,
+              assignedBy: agent.id,
+            });
+
+            console.log(`[TaskManager] Created task ${newTask.id} for ${mentionedAgentId}: ${newTask.description}`);
+          } else {
+            // Fallback: create generic task from context
+            const genericDesc = `Task delegated in message: "${contentString.substring(0, 100)}..."`;
+            const newTask = this.taskManager.createTask({
+              description: genericDesc,
+              assignee: mentionedAgentId,
+              assignedBy: agent.id,
+            });
+
+            console.log(`[TaskManager] Created generic task ${newTask.id} for ${mentionedAgentId}`);
+          }
+        });
+      }
+
       this.scheduler.scheduleMentions(task.topicId, mentions);
     } else if ((agent.role || '').toLowerCase().includes('team lead')) {
       // Team lead without mention; wait for human input or follow-up
@@ -340,6 +443,10 @@ export class Orchestrator extends EventEmitter {
       .filter((event) => event.kind === 'message' || event.kind === 'human_input')
       .map((event) => this.eventToMessage(event));
 
+    // Include task tracking information
+    const taskContext = this.taskManager.getTaskContextForAgent(agent.id);
+    const taskSummary = this.taskManager.getSummary();
+
     return {
       messages,
       team: this.teamConfig,
@@ -348,6 +455,8 @@ export class Orchestrator extends EventEmitter {
         level: this.getAgentLevel(agent.id),
         mode: this.teamConfig.mode || DEFAULT_MODE,
         sandbox: this.getSandboxLevel(),
+        tasks: taskContext,
+        projectStatus: taskSummary,
       },
     };
   }
