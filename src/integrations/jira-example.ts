@@ -15,6 +15,7 @@
 
 import { TaskManager, TaskHooks, TaskHookContext } from '../orchestrator/TaskManager';
 import { AgentCredentialsManager } from '../config/AgentCredentials';
+import { ProjectResolver } from './ProjectResolver';
 
 /**
  * Example Jira client interface
@@ -58,7 +59,8 @@ class MockJiraClient implements JiraClient {
 class JiraClientFactory {
   constructor(
     private defaultHost: string,
-    private projectKey: string
+    private defaultProjectKey: string,
+    private projectResolver: ProjectResolver
   ) {}
 
   /**
@@ -94,35 +96,67 @@ class JiraClientFactory {
   getAssigneeAccountId(context: TaskHookContext): string | undefined {
     return context.assigneeCredentials?.jira?.accountId;
   }
+
+  /**
+   * Resolve which Jira project to use for this task
+   * Uses multi-level fallback logic via ProjectResolver
+   */
+  resolveProject(context: TaskHookContext): string {
+    const resolved = this.projectResolver.resolveProject(context);
+    return resolved || this.defaultProjectKey;
+  }
 }
 
 /**
  * Create multi-account Jira hooks
  * Each agent uses their own Jira credentials for authentication
+ *
+ * @param jiraHost - Default Jira host (e.g., 'company.atlassian.net')
+ * @param defaultProjectKey - Fallback project key if no other project is resolved
+ * @param projectResolver - Optional ProjectResolver for multi-project support
  */
 export function createMultiAccountJiraHooks(
   jiraHost: string,
-  projectKey: string
+  defaultProjectKey: string,
+  projectResolver?: ProjectResolver
 ): TaskHooks {
-  const factory = new JiraClientFactory(jiraHost, projectKey);
+  const resolver = projectResolver || new ProjectResolver({ globalDefaultProject: defaultProjectKey });
+  const factory = new JiraClientFactory(jiraHost, defaultProjectKey, resolver);
 
   return {
     /**
      * Create Jira issue with assignee's credentials
      */
     onCreate: async (context: TaskHookContext) => {
-      const { task } = context;
+      const { task, assigneeCredentials, assignerCredentials } = context;
+
+      console.log('[Jira Hook:onCreate] ========== START ==========');
+      console.log(`[Jira Hook:onCreate:DEBUG] Task ID: ${task.id}`);
+      console.log(`[Jira Hook:onCreate:DEBUG] Description: ${task.description}`);
+      console.log(`[Jira Hook:onCreate:DEBUG] Assignee: ${task.assignee}`);
+      console.log(`[Jira Hook:onCreate:DEBUG] Assigned By: ${task.assignedBy}`);
+      console.log(`[Jira Hook:onCreate:DEBUG] Task jiraProject: ${task.jiraProject || 'not specified'}`);
+      console.log(`[Jira Hook:onCreate:DEBUG] Assignee has credentials: ${!!assigneeCredentials}`);
+      if (assigneeCredentials) {
+        console.log(`[Jira Hook:onCreate:DEBUG] Assignee Jira email: ${assigneeCredentials.jira?.email || 'not set'}`);
+        console.log(`[Jira Hook:onCreate:DEBUG] Assignee Jira account ID: ${assigneeCredentials.jira?.accountId || 'not set'}`);
+        console.log(`[Jira Hook:onCreate:DEBUG] Assignee default projects: ${assigneeCredentials.jira?.defaultProjects?.join(', ') || 'none'}`);
+      }
 
       try {
         // Use assignee's Jira client
         const jiraClient = factory.createClient(context);
         const assigneeAccountId = factory.getAssigneeAccountId(context);
 
-        console.log(`[Jira Integration] Creating issue for ${task.assignee} using their credentials`);
+        // Resolve which project to use (multi-level fallback)
+        const resolvedProject = factory.resolveProject(context);
+
+        console.log(`[Jira Hook:onCreate:DEBUG] Resolved project: ${resolvedProject}`);
+        console.log(`[Jira Hook:onCreate] Creating issue in project ${resolvedProject} for ${task.assignee} using their credentials`);
 
         const issue = await jiraClient.addNewIssue({
           fields: {
-            project: { key: projectKey },
+            project: { key: resolvedProject },
             summary: task.description,
             description: `Task assigned to: ${task.assignee}\nAssigned by: ${task.assignedBy}`,
             issuetype: { name: 'Task' },
@@ -133,14 +167,18 @@ export function createMultiAccountJiraHooks(
           }
         });
 
-        console.log(`[Jira Integration] Created issue ${issue.key} for task ${task.id}`);
+        console.log(`[Jira Hook:onCreate] ✓ Created issue ${issue.key} for task ${task.id}`);
+        console.log(`[Jira Hook:onCreate:DEBUG] Issue URL: ${issue.self}`);
+        console.log('[Jira Hook:onCreate] ========== END (SUCCESS) ==========');
 
         return {
           externalTicketId: issue.key,
           externalTicketUrl: issue.self
         };
       } catch (error) {
-        console.error('[Jira Integration] Failed to create issue:', error);
+        console.error('[Jira Hook:onCreate] ========== END (FAILED) ==========');
+        console.error('[Jira Hook:onCreate:ERROR] Failed to create issue:', error);
+        console.error(`[Jira Hook:onCreate:ERROR] Task ID: ${task.id}`);
         // Don't throw - allow task creation to succeed even if Jira fails
       }
     },
@@ -149,19 +187,35 @@ export function createMultiAccountJiraHooks(
      * Update issue status using assignee's credentials
      */
     onStart: async (context: TaskHookContext) => {
-      const { task } = context;
-      if (!task.externalTicketId) return;
+      const { task, assigneeCredentials } = context;
+
+      console.log('[Jira Hook:onStart] ========== START ==========');
+      console.log(`[Jira Hook:onStart:DEBUG] Task ID: ${task.id}`);
+      console.log(`[Jira Hook:onStart:DEBUG] External Ticket ID: ${task.externalTicketId || 'not set'}`);
+      console.log(`[Jira Hook:onStart:DEBUG] Assignee: ${task.assignee}`);
+
+      if (!task.externalTicketId) {
+        console.warn('[Jira Hook:onStart:WARN] No external ticket ID, skipping transition');
+        console.log('[Jira Hook:onStart] ========== END (SKIPPED) ==========');
+        return;
+      }
 
       try {
         const jiraClient = factory.createClient(context);
 
-        console.log(`[Jira Integration] ${task.assignee} starting work on ${task.externalTicketId}`);
+        console.log(`[Jira Hook:onStart] ${task.assignee} starting work on ${task.externalTicketId}`);
+        console.log(`[Jira Hook:onStart:DEBUG] Transitioning to: In Progress`);
 
         await jiraClient.transitionIssue(task.externalTicketId, {
           transition: { name: 'In Progress' }
         });
+
+        console.log(`[Jira Hook:onStart] ✓ Transitioned ${task.externalTicketId} to In Progress`);
+        console.log('[Jira Hook:onStart] ========== END (SUCCESS) ==========');
       } catch (error) {
-        console.error('[Jira Integration] Failed to transition issue:', error);
+        console.error('[Jira Hook:onStart] ========== END (FAILED) ==========');
+        console.error('[Jira Hook:onStart:ERROR] Failed to transition issue:', error);
+        console.error(`[Jira Hook:onStart:ERROR] Ticket ID: ${task.externalTicketId}`);
       }
     },
 
@@ -169,16 +223,28 @@ export function createMultiAccountJiraHooks(
      * Complete issue using assignee's credentials
      */
     onComplete: async (context: TaskHookContext) => {
-      const { task } = context;
-      if (!task.externalTicketId) return;
+      const { task, assigneeCredentials } = context;
+
+      console.log('[Jira Hook:onComplete] ========== START ==========');
+      console.log(`[Jira Hook:onComplete:DEBUG] Task ID: ${task.id}`);
+      console.log(`[Jira Hook:onComplete:DEBUG] External Ticket ID: ${task.externalTicketId || 'not set'}`);
+      console.log(`[Jira Hook:onComplete:DEBUG] Assignee: ${task.assignee}`);
+      console.log(`[Jira Hook:onComplete:DEBUG] Result: ${task.result || 'no result provided'}`);
+
+      if (!task.externalTicketId) {
+        console.warn('[Jira Hook:onComplete:WARN] No external ticket ID, skipping completion');
+        console.log('[Jira Hook:onComplete] ========== END (SKIPPED) ==========');
+        return;
+      }
 
       try {
         const jiraClient = factory.createClient(context);
 
-        console.log(`[Jira Integration] ${task.assignee} completing ${task.externalTicketId}`);
+        console.log(`[Jira Hook:onComplete] ${task.assignee} completing ${task.externalTicketId}`);
 
         // Add completion comment
         if (task.result) {
+          console.log(`[Jira Hook:onComplete:DEBUG] Adding completion comment`);
           await jiraClient.addComment(
             task.externalTicketId,
             `Task completed by ${task.assignee}.\n\nResult: ${task.result}`
@@ -186,11 +252,17 @@ export function createMultiAccountJiraHooks(
         }
 
         // Transition to Done
+        console.log(`[Jira Hook:onComplete:DEBUG] Transitioning to: Done`);
         await jiraClient.transitionIssue(task.externalTicketId, {
           transition: { name: 'Done' }
         });
+
+        console.log(`[Jira Hook:onComplete] ✓ Completed ${task.externalTicketId}`);
+        console.log('[Jira Hook:onComplete] ========== END (SUCCESS) ==========');
       } catch (error) {
-        console.error('[Jira Integration] Failed to complete issue:', error);
+        console.error('[Jira Hook:onComplete] ========== END (FAILED) ==========');
+        console.error('[Jira Hook:onComplete:ERROR] Failed to complete issue:', error);
+        console.error(`[Jira Hook:onComplete:ERROR] Ticket ID: ${task.externalTicketId}`);
       }
     },
 
@@ -198,27 +270,44 @@ export function createMultiAccountJiraHooks(
      * Log failure using assignee's credentials
      */
     onFail: async (context: TaskHookContext) => {
-      const { task } = context;
-      if (!task.externalTicketId) return;
+      const { task, assigneeCredentials } = context;
+
+      console.log('[Jira Hook:onFail] ========== START ==========');
+      console.log(`[Jira Hook:onFail:DEBUG] Task ID: ${task.id}`);
+      console.log(`[Jira Hook:onFail:DEBUG] External Ticket ID: ${task.externalTicketId || 'not set'}`);
+      console.log(`[Jira Hook:onFail:DEBUG] Assignee: ${task.assignee}`);
+      console.log(`[Jira Hook:onFail:DEBUG] Error: ${task.error || 'no error message'}`);
+
+      if (!task.externalTicketId) {
+        console.warn('[Jira Hook:onFail:WARN] No external ticket ID, skipping failure logging');
+        console.log('[Jira Hook:onFail] ========== END (SKIPPED) ==========');
+        return;
+      }
 
       try {
         const jiraClient = factory.createClient(context);
 
-        console.log(`[Jira Integration] Logging failure for ${task.externalTicketId}`);
+        console.log(`[Jira Hook:onFail] Logging failure for ${task.externalTicketId}`);
+        console.log(`[Jira Hook:onFail:DEBUG] Adding failure comment`);
 
         await jiraClient.addComment(
           task.externalTicketId,
           `Task failed.\n\nError: ${task.error || 'Unknown error'}\nAgent: ${task.assignee}`
         );
+
+        console.log(`[Jira Hook:onFail] ✓ Logged failure for ${task.externalTicketId}`);
+        console.log('[Jira Hook:onFail] ========== END (SUCCESS) ==========');
       } catch (error) {
-        console.error('[Jira Integration] Failed to log error:', error);
+        console.error('[Jira Hook:onFail] ========== END (FAILED) ==========');
+        console.error('[Jira Hook:onFail:ERROR] Failed to log error:', error);
+        console.error(`[Jira Hook:onFail:ERROR] Ticket ID: ${task.externalTicketId}`);
       }
     }
   };
 }
 
 /**
- * Complete example usage with multi-account setup:
+ * Complete example usage with multi-account and multi-project setup:
  *
  * ## Option 1: Load from environment variables
  *
@@ -301,6 +390,101 @@ export function createMultiAccountJiraHooks(
  * });
  *
  * // Then register hooks as shown above
+ * ```
+ *
+ * ## Option 3: Multi-Project Support
+ *
+ * Real-world scenario: Agents work across multiple Jira projects
+ *
+ * ```typescript
+ * import { ProjectResolver, parseProjectFromSpec } from './integrations/ProjectResolver';
+ * import * as fs from 'fs';
+ *
+ * // 1. Set up agent credentials with default projects
+ * const credentialsManager = new AgentCredentialsManager();
+ * credentialsManager.loadFromConfig({
+ *   'chloe-frontend': {
+ *     email: { address: 'chloe@company.com' },
+ *     jira: {
+ *       accountId: '557058:abc123',
+ *       apiToken: process.env.CHLOE_JIRA_TOKEN,
+ *       defaultProjects: ['FRONTEND', 'MOBILE']  // Chloe works on 2 projects
+ *     }
+ *   },
+ *   'bob-backend': {
+ *     email: { address: 'bob@company.com' },
+ *     jira: {
+ *       accountId: '557058:def456',
+ *       apiToken: process.env.BOB_JIRA_TOKEN,
+ *       defaultProjects: ['BACKEND', 'API']  // Bob works on different projects
+ *     }
+ *   }
+ * });
+ *
+ * // 2. Parse project from SPEC.md
+ * const specContent = fs.readFileSync('./SPEC.md', 'utf-8');
+ * const projectSpec = parseProjectFromSpec(specContent);
+ *
+ * // 3. Create ProjectResolver with multi-level fallback
+ * const projectResolver = new ProjectResolver({
+ *   projectSpec,
+ *   globalDefaultProject: 'GENERAL'  // Fallback if nothing else matches
+ * });
+ *
+ * // 4. Set up Jira hooks with ProjectResolver
+ * const orchestrator = new Orchestrator(teamConfig, projectSpec, workspaceDir);
+ * await orchestrator.initialize();
+ * orchestrator.getTaskManager().setCredentialsManager(credentialsManager);
+ *
+ * const jiraHooks = createMultiAccountJiraHooks(
+ *   'company.atlassian.net',
+ *   'GENERAL',
+ *   projectResolver  // Pass ProjectResolver for multi-project support
+ * );
+ * orchestrator.getTaskManager().registerHooks(jiraHooks);
+ *
+ * // 5. Now tasks can specify projects at different levels:
+ *
+ * // Task-level (highest priority):
+ * const taskWithProject = await taskManager.createTask({
+ *   description: 'Fix login bug',
+ *   assignee: 'chloe-frontend',
+ *   assignedBy: 'alex-lead',
+ *   jiraProject: 'MOBILE'  // Explicitly use MOBILE project
+ * });
+ * // → Creates ticket in MOBILE project
+ *
+ * // Agent-level (uses agent's default):
+ * const taskUsingAgentDefault = await taskManager.createTask({
+ *   description: 'Add feature',
+ *   assignee: 'bob-backend',
+ *   assignedBy: 'alex-lead'
+ *   // No jiraProject specified
+ * });
+ * // → Uses Bob's first default project: BACKEND
+ *
+ * // Project spec level (from SPEC.md):
+ * // If SPEC.md contains: "Jira Project: FRONTEND"
+ * const taskUsingSpec = await taskManager.createTask({
+ *   description: 'Update UI',
+ *   assignee: 'chloe-frontend',
+ *   assignedBy: 'alex-lead'
+ * });
+ * // → Uses project from SPEC.md: FRONTEND
+ * ```
+ *
+ * ## SPEC.md Format for Jira Projects
+ *
+ * Add to your SPEC.md:
+ *
+ * ```markdown
+ * # Project Specification
+ *
+ * ## Jira Integration
+ * Jira Project: FRONTEND
+ *
+ * <!-- Or for multiple projects: -->
+ * Jira Projects: FRONTEND, MOBILE, DESIGN
  * ```
  *
  * ## How it works:
