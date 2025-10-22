@@ -1,8 +1,15 @@
 import { Message } from '../types/Message';
+import { TeamConfig } from '../types/Session';
 
 export interface AgentOutput {
   message: Message;
-  // Potentially other outputs like file changes, tool calls, etc.
+}
+
+export interface AgentContext {
+  messages: Message[];
+  team: TeamConfig;
+  projectSpec: string;
+  agentMetadata?: Record<string, unknown>;
 }
 
 export interface Agent {
@@ -13,8 +20,9 @@ export interface Agent {
   skills: string[];
   scope: string;
   personality: string;
+  level?: string;
+  responsibilities?: string[];
+  costPerMinute?: number;
 
-  // The core method for an agent to process a task or message
-  // context will include relevant messages, project state, etc.
-  execute(context: { messages: Message[]; team: any; projectSpec: string; }): Promise<AgentOutput>;
+  execute(context: AgentContext): Promise<AgentOutput>;
 }
