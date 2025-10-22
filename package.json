@@ -1,22 +1,42 @@
 {
   "name": "tokligence-works",
   "version": "0.1.0",
-  "description": "CLI for orchestrating AI agent teams",
+  "description": "AI-powered multi-agent development teams. Orchestrate LLM agents that collaborate like real software teams.",
   "main": "dist/index.js",
   "bin": {
-    "tokligence-works": "dist/index.js"
+    "tokligence": "dist/index.js"
   },
+  "files": [
+    "dist/",
+    "prompts/",
+    "templates/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/index.ts",
-    "test": "jest"
+    "test": "jest",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tokligence/tokligence-works.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai",
+    "llm",
+    "multi-agent",
+    "orchestration",
+    "gpt-4",
+    "claude",
+    "gemini",
+    "automation",
+    "development-tools",
+    "jira",
+    "collaboration"
+  ],
+  "author": "Tokligence Team",
   "license": "Apache-2.0",
   "type": "commonjs",
   "bugs": {
