@@ -15,6 +15,7 @@ export interface ToolOutputContent {
   output: string;
   error?: string;
   command?: string;
+  durationMs?: number;
 }
 
 export interface Message {
