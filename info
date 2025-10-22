@@ -1,0 +1,25 @@
+我希望组个ai agent team来做帮我做项目，把codex, claude code都 组成不同role不同人名然后可以高效地一起在一个项目里面工作，还是使用terminal里面执行的方式，可能还是typescript之类的，基于下面我给的信息，你有这2个任务： 1. 寻找github上是否有类似的项目  2. 给出我这个项目的一些架构的选择和solution的选择.   下面是信息：  
+
+在2025年，“用不用 AI”已经不是问题，否则，你就是问题。
+现在已经进化到Outsourcing-like，例如 Claude Code (Anthropic), OpenAI Codex ，
+不要对AI编程还停留在copilot-like的软件，例如GitHub Copilot / Copilot Chat,JetBrains AI Assistant, Cursor，
+当前的Claude Code (Anthropic), OpenAI Codex这类软件的编程能力已经超过90%+的人类程序员，对于大多数人来说，你需要跟一个能力可能比你强，知道得比你多，还比你不怕累的AI一起工作，你准备好了吗？
+
+你的能力可能拖AI后腿，你的见解的高度和经验的广度可能限制AI的为你工作的程度。
+senior的工程师在AI的帮助下更能做出有影响力的项目，而junior工程师的精力优势年轻优势将不再有。
+
+AI的速度比人类快得多，如果人类工程师一定要控制所有细节，最起码要做到所有code review,那么你的code review的速度和对项目代码的理解速度就是制约整个项目速度的bottleneck
+如果你不做code review,那可可能可以这么做： set up dev environment, review test cases, give specifications and guidelines,然后你不用仔细review代码，而是关注test cases是否通过，这样的速度可能会快得多。
+还有一个做法，假如你用claude code写了tests cases, 你可以让codex去review是否合理，codex赞同的部分你可能就可以忽略，而它提出异议的部分是你需要参与重点review和improve的，
+在这里面，我引入一个概念，就是你需要带一支不同的模型能力，不同角色的AI agent team,来对接你的实际工作
+这就是我要做teligence-works的原因，它可以让你通过配置角色，把不同成本不同能力的coding agent放在同个项目下协作，来提高你的工作效率和工作效果。你只需要为各个角色配置基本的配置信息就可以。例如，你可以使用codex + GPT-5 high 来做team lead role,然后让codex + GPT-5 medium来做senior backend engineer role, 然后让claude code来做 front end developer and QA tester and Documentation, 他们之间共享session,彼此了解对方的存在，由team lead 跟你沟通，然后由team lead 做好项目的技术架构和人员匹配和分工；更进一步地，你基于可以启动auto-pilot mode ： 让team lead来规划这个team的配置，以及多少人，监督并完成项目。 
+
+这个 teligence-works项目有几个模式：1. 经济成本优先模式  2.最短时间周期模式  3. 最高质量模式 在这三个模式下，你都可以选择是你多大程度介入开发（你可以在他们工作过程中参与讨论），或者让team lead 全程auto-pilot来帮你做这些事
+
+是的，重心放在“团队编排与治理层”，我们是集成了codex, claude code以及其他类似的coding agent,而不是自己做coding agent; 以及人类和组织对于AI项目的可理解性可对接性，采用当前大多数公司有的角色来展开这个团队设计，让公司高层感觉更亲近，这可能是个重点。还有，所有的工作模式，按道理都应该是优先解决最核心的工作路径，把里面的难点走通了，做成MVP，然后再一轮一轮迭代，加feature,到可release的版本，而且因为很多公司的内部流程不一样，怎么把这种系统融入到不同公司的内部流程（例如 有些用scrum sprint + jira, 有些不用，有些可能用别的）； 当前的coding agent还有一个问题，就是做一单是一单，过了就忘了，下次没上文了，不像是一个具体的公司里面的开发人员，有长期记忆，可重复叫他把他做的项目再refine之类的；因为我们可以无限定义不同的team和角色以及人名，其实这些是可以有长期记忆可以一直跟人类公司组织共存的，对吗？你再帮我理理思路
+
+
+
+这个项目可能可以更进一步，做数字化员工，具有长期记忆，有具体角色，技巧，权限，性格和名字，你想像一下，个slack群或者teams 群里面20个员工，只有2个是人类，大家可以在一起讨论，然后做事情；第一个优先落地项目是研发和写代码，人类员工可以在terminal里面把这些数字员工招呼出来一起干活，工作进度不只是在terminal里面可以看，也可以在web界面(可能更用户友好)看，你觉得这个升级怎么样？这里面可能有几个调整，包括超长上下文，不同场景下不同信息怎么区分，是否要放在一起推理，如何做超长记忆，可能需要在内容相关性上再加上时间维度(越靠近越重要)，怎么做上下文压缩，你综合这些信息，看看市面上有哪些类似的产品，就这个产品本身的话，怎么一步步构建这个产品(还是要以最重要mvp开始)
+
+因为这个项目是以claude code, codex等现成的agents的基础上，做一层协调层，这个是否合适使用langgraph这类常规sdk?怎么样更灵活适应未来不断增加的多重coding agent以及其他类型的agent(可能会有marketing, finance, compliance等等)

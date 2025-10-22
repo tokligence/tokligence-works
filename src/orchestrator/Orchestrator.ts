@@ -374,13 +374,13 @@ export class Orchestrator extends EventEmitter {
 
       if (isTeamLead && contentString) {
         // Extract task description for each mentioned agent
-        mentions.forEach(mentionedAgentId => {
+        for (const mentionedAgentId of mentions) {
           // Try to extract task from message
           const taskExtract = this.taskManager.extractTaskFromMessage(contentString, agent.id);
 
           if (taskExtract && taskExtract.assignee === mentionedAgentId) {
-            // Create task assignment
-            const newTask = this.taskManager.createTask({
+            // Create task assignment (now async)
+            const newTask = await this.taskManager.createTask({
               description: taskExtract.description,
               assignee: mentionedAgentId,
               assignedBy: agent.id,
@@ -390,7 +390,7 @@ export class Orchestrator extends EventEmitter {
           } else {
             // Fallback: create generic task from context
             const genericDesc = `Task delegated in message: "${contentString.substring(0, 100)}..."`;
-            const newTask = this.taskManager.createTask({
+            const newTask = await this.taskManager.createTask({
               description: genericDesc,
               assignee: mentionedAgentId,
               assignedBy: agent.id,
@@ -398,7 +398,7 @@ export class Orchestrator extends EventEmitter {
 
             console.log(`[TaskManager] Created generic task ${newTask.id} for ${mentionedAgentId}`);
           }
-        });
+        }
       }
 
       this.scheduler.scheduleMentions(task.topicId, mentions);
@@ -689,5 +689,25 @@ export class Orchestrator extends EventEmitter {
 
   private getSandboxLevel(): SandboxLevel {
     return this.teamConfig.sandbox || DEFAULT_SANDBOX;
+  }
+
+  /**
+   * Get the TaskManager instance to register external integration hooks
+   * @returns The TaskManager instance
+   *
+   * @example
+   * ```typescript
+   * import { createJiraHooks } from './integrations/jira-example';
+   *
+   * const orchestrator = new Orchestrator(...);
+   * await orchestrator.initialize();
+   *
+   * // Register Jira hooks
+   * const jiraHooks = createJiraHooks(jiraClient, 'PROJ');
+   * orchestrator.getTaskManager().registerHooks(jiraHooks);
+   * ```
+   */
+  getTaskManager(): TaskManager {
+    return this.taskManager;
   }
 }
