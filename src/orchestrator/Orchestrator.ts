@@ -247,21 +247,50 @@ export class Orchestrator extends EventEmitter {
       this.recordToolEvent(toolResult, task.topicId);
       this.emit('message', toolOutputMessage);
 
+      // After tool execution, provide guidance based on success and agent role
+      const isTeamLead = (agent.role || '').toLowerCase().includes('team lead') || (agent.role || '').toLowerCase().includes('lead');
+
       if (!toolResult.success) {
+        // Tool failed - agent should retry or report error
+        const errorGuidance: Message = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          topicId: task.topicId,
+          author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+          timestamp: Date.now() + 1,
+          type: 'system',
+          content: `${agent.name}, the tool execution failed. Please review the error and either retry with corrections or report the issue to the Team Lead.`,
+        };
+        this.recordMessageEvent(errorGuidance);
+        this.emit('message', errorGuidance);
+
         this.scheduler.enqueue({
           type: 'agent_turn',
           agentId: agent.id,
           topicId: task.topicId,
           reason: 'followup',
-          timestamp: Date.now(),
+          timestamp: Date.now() + 2,
         });
       } else {
+        // Tool succeeded - prompt agent to report completion
+        if (!isTeamLead) {
+          const reportGuidance: Message = {
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            topicId: task.topicId,
+            author: { id: 'system', name: 'System', role: 'Orchestrator', type: 'agent' },
+            timestamp: Date.now() + 1,
+            type: 'system',
+            content: `${agent.name}, the tool executed successfully. Please report your completion to the Team Lead using @mention and describe what you accomplished.`,
+          };
+          this.recordMessageEvent(reportGuidance);
+          this.emit('message', reportGuidance);
+        }
+
         this.scheduler.enqueue({
           type: 'agent_turn',
           agentId: agent.id,
           topicId: task.topicId,
           reason: 'followup',
-          timestamp: Date.now() + 1,
+          timestamp: Date.now() + 2,
         });
       }
       await this.runLoop();
