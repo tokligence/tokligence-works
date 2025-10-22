@@ -127,6 +127,24 @@ Every integration action is logged with structured, searchable output:
 
 ## 🎬 See It In Action
 
+### Real Team Collaboration in Action (v0.1.0)
+
+Watch how Alex (Team Lead) delegates tasks to Chloe (Frontend Developer), who then uses the file system tool to create the HTML file:
+
+<div align="center">
+  <img src="data/images/0.1.0.png" alt="Tokligence Works Demo - Team Collaboration" width="100%">
+  <p><em>Alex analyzes the spec, breaks down tasks, and delegates to Chloe. Chloe creates the file using the file_system tool.</em></p>
+</div>
+
+**What's happening:**
+1. 🎯 **System initializes** the orchestrator with available tools
+2. 👨‍💼 **Alex (Team Lead)** reviews the spec and breaks it into subtasks
+3. 📋 **Task delegation** to @chloe-frontend with clear instructions
+4. 👩‍💻 **Chloe executes** using the `file_system` tool to write `index.html`
+5. ✅ **Task completion** reported back to the team lead
+
+---
+
 ### Example: Building a Login Feature
 
 **1. You provide the spec:**
