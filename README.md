@@ -175,24 +175,55 @@ Jira Project: FRONTEND
 
 ### Installation
 
+**Option 1: Install globally (recommended)**
+
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/tokligence-works.git
-cd tokligence-works
+npm install -g tokligence-works
 
-# Install dependencies
-npm install
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your API keys
+# Verify installation
+tokligence --version
 ```
 
-### Run Your First Team
+**Option 2: Use in existing project**
 
 ```bash
-# 1. Configure your team
-cat > team.yml << EOF
+cd your-project
+npm install tokligence-works
+
+# Use with npx
+npx tokligence init
+```
+
+**Option 3: Development/Contributing**
+
+```bash
+git clone https://github.com/tokligence/tokligence-works.git
+cd tokligence-works
+npm install
+npm link  # Creates global 'tokligence' command
+```
+
+### Initialize Your First Project
+
+```bash
+# 1. Create and navigate to your project
+mkdir my-ai-team && cd my-ai-team
+
+# 2. Initialize Tokligence
+tokligence init
+
+# This creates:
+# - tokligence.yml (team configuration)
+# - SPEC.md (project specification)
+# - .tokligence/ (local config, gitignored)
+# - workspace/ (agent output directory)
+
+# 3. Add your API keys
+echo "OPENAI_API_KEY=sk-..." >> .tokligence/.env
+echo "ANTHROPIC_API_KEY=sk-ant-..." >> .tokligence/.env
+
+# 4. Edit your team configuration
+cat > tokligence.yml << EOF
 teamName: My Dev Team
 mode: time
 sandbox: guided
@@ -209,25 +240,50 @@ members:
     skills: [react, typescript]
 EOF
 
-# 2. Create your project spec
+# 5. Create your project specification
 cat > SPEC.md << EOF
 # Project: Simple Todo App
 Build a todo app with:
 - Add/remove todos
 - Mark as complete
 - Persist to localStorage
+
+Jira Project: DEMO
 EOF
 
-# 3. Run the orchestrator
-npm start
+# 6. Start your AI team!
+tokligence start
 ```
 
 **What happens:**
-1. Alex reads the spec and delegates tasks
-2. Chloe builds the UI
-3. Agents collaborate through @mentions
-4. You see real-time updates in the terminal
-5. Code is written to `workspace/`
+1. ✨ Tokligence loads your team configuration
+2. 👨‍💼 Alex (Team Lead) reads SPEC.md and creates a plan
+3. 📋 Tasks are automatically created (and optionally synced to Jira)
+4. 👥 Agents collaborate through @mentions
+5. 💻 Code is written to `workspace/`
+6. 📊 You see real-time updates in your terminal
+
+**Output example:**
+```
+[Tokligence] Loading team from tokligence.yml...
+[Tokligence] ✓ Initialized 2 agents
+[Tokligence] Reading SPEC.md...
+
+👨‍💼 Alex (Team Lead):
+Let's break this down into tasks:
+1. Create todo component structure
+2. Implement add/remove functionality
+3. Add localStorage persistence
+
+@chloe-frontend please start with the todo component structure.
+
+👩‍💻 Chloe (Frontend):
+[Uses file_system tool]
+✓ Created workspace/src/components/TodoList.tsx
+✓ Created workspace/src/components/TodoItem.tsx
+
+I've created the basic structure. @alex-lead please review.
+```
 
 ---
 
@@ -328,10 +384,10 @@ npm start
 
 ### Show Your Support
 
-If you find Tokligence Works useful:
-- ⭐ Star this repository
-- 🐦 Tweet about your experience
-- 📝 Write a blog post or tutorial
+Found a bug? Have a feature request? We'd love to hear from you:
+- 🐛 [Report issues](https://github.com/your-org/tokligence-works/issues)
+- 💡 [Suggest features](https://github.com/your-org/tokligence-works/discussions)
+- 📝 Share your use case
 - 🤝 Contribute code or documentation
 
 ---
@@ -384,8 +440,6 @@ Built with inspiration from:
 
 **Made with ❤️ by the Tokligence Team**
 
-[Website](https://tokligence.com) • [Documentation](docs/) • [Twitter](https://twitter.com/tokligence)
-
-⭐ **Star us on GitHub — it helps!** ⭐
+[Website](https://tokligence.com) • [Documentation](docs/) • [Community](https://github.com/your-org/tokligence-works/discussions)
 
 </div>

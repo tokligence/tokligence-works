@@ -1,0 +1,50 @@
+teamName: My Development Team
+mode: time  # Options: time, cost, quality
+sandbox: guided  # Options: strict, guided, wild
+
+members:
+  - id: alex-lead
+    name: Alex
+    role: Team Lead
+    level: senior
+    model: anthropic/claude-3.5-sonnet  # or: openai/gpt-4o, google/gemini-1.5-pro
+    skills: [architecture, delegation, code-review]
+    responsibilities:
+      - Task breakdown and assignment
+      - Code review and quality control
+      - Team coordination
+
+  - id: chloe-frontend
+    name: Chloe
+    role: Frontend Developer
+    level: mid-level
+    model: openai/gpt-4o
+    skills: [react, typescript, css, responsive-design]
+    responsibilities:
+      - UI implementation
+      - Frontend testing
+      - Component development
+
+  # Uncomment to add more team members:
+
+  # - id: bob-backend
+  #   name: Bob
+  #   role: Backend Developer
+  #   level: junior
+  #   model: openai/gpt-4o-mini
+  #   skills: [nodejs, apis, databases]
+  #   responsibilities:
+  #     - API development
+  #     - Database design
+  #     - Server-side logic
+
+  # - id: dana-qa
+  #   name: Dana
+  #   role: QA Engineer
+  #   level: mid-level
+  #   model: anthropic/claude-3.5-sonnet
+  #   skills: [testing, automation, debugging]
+  #   responsibilities:
+  #     - Test planning
+  #     - Bug identification
+  #     - Quality assurance
